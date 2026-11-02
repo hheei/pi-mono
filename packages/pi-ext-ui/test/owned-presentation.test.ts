@@ -100,6 +100,28 @@ describe("optional owner presentation consumer", () => {
 		expect(result.render(120).join("\n")).toContain("full request");
 	});
 
+	test("a running container folds and lets the child it is waiting for animate", () => {
+		const h = host();
+		h.register();
+		const native = createToolPresentationRenderers(h.pi, "container_owner", () => ({
+			summary: "cell running",
+		}));
+		const renderer = h.resolve("container_owner", native);
+		const ctx = context({ toolCallId: "live-parent", isPartial: true, durationMs: undefined });
+		// The host reports the nested call before the container reports anything about it.
+		runtime.tracker.recordStart({
+			toolCallId: "live-parent/1",
+			toolName: "bash",
+			args: { command: "ls" },
+			parentToolCallId: "live-parent",
+		});
+		const rows = (renderer.renderCall!(ctx.args, theme, ctx) as ToolView).render(80);
+		// The container only folds; the child row is the one that carries the live glyph.
+		expect(rows[0]).toContain("▸");
+		expect(rows[0]).not.toMatch(/[·✢✳✶✻✽]/);
+		expect(rows.join("\n")).toMatch(/[·✢✳✶✻✽] bash/);
+	});
+
 	test.each([
 		"top-level",
 		"nested",

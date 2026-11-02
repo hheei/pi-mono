@@ -671,6 +671,20 @@ function renderOwnedPresentation(params: {
 	const isError = context.isError || result?.isError === true;
 	const pending = result === undefined || context.isPartial;
 	const isDiff = !isError && !pending && presentation.kind === "diff";
+	// A container's children are facts: the provider states the ones it finished, and the tracker
+	// already holds the one still running, so the row can show work the tool has not reported yet.
+	const captured =
+		runtime.tracker.getCaptured(context.toolCallId) ??
+		(result !== undefined &&
+		isRecord(result.details) &&
+		Array.isArray(result.details.__piExtUiCapturedCalls)
+			? (result.details.__piExtUiCapturedCalls as CapturedToolCall[])
+			: undefined);
+	const ownCalls =
+		presentation.children === undefined
+			? extractNestedCalls(result)
+			: presentationChildCalls(presentation.children);
+	const childCalls = withSessionArgs(captured ?? ownCalls, runtime);
 	// The tool owns its status: a container says "none" for a child's failure and a partial patch
 	// says "warn" even though the host marks the result failed. Only a provider without an opinion
 	// falls back to the frame's own reading of the execution.
@@ -678,13 +692,16 @@ function renderOwnedPresentation(params: {
 		presentation.status ??
 		(isError
 			? "error"
-			: pending
-				? context.argsComplete
-					? "running"
-					: "streaming"
-				: isDiff
-					? "none"
-					: "ok");
+			: // Child rows carry the work, so the container's own glyph is the fold pin only.
+				childCalls.length > 0
+				? "none"
+				: pending
+					? context.argsComplete
+						? "running"
+						: "streaming"
+					: isDiff
+						? "none"
+						: "ok");
 	const railToken: RailColorToken = isError ? "error" : pending ? "accent" : "success";
 	const output =
 		isError && result !== undefined
@@ -746,20 +763,6 @@ function renderOwnedPresentation(params: {
 			if (presentation.collapsedRows !== undefined) {
 				return presentation.collapsedRows;
 			}
-			const captured =
-				result !== undefined
-					? (runtime.tracker.getCaptured(context.toolCallId) ??
-						(isRecord(result.details) && Array.isArray(result.details.__piExtUiCapturedCalls)
-							? (result.details.__piExtUiCapturedCalls as CapturedToolCall[])
-							: undefined))
-					: undefined;
-			const nestedCalls = extractNestedCalls(result);
-			// The owner's own child facts win over parsing another package's details.
-			const ownCalls =
-				presentation.children === undefined
-					? nestedCalls
-					: presentationChildCalls(presentation.children);
-			const childCalls = withSessionArgs(captured ?? ownCalls, runtime);
 			if (childCalls.length > 0) {
 				return new NestedCallsView({
 					calls: childCalls,
@@ -858,6 +861,7 @@ function createRendererResolver(
 		return {
 			renderShell: "self",
 			renderCall(args, theme, context: ToolRenderContext) {
+				runtime.rememberRow(context.toolCallId, context.invalidate);
 				if (provider !== undefined) {
 					const callContext = { ...context, args };
 					const view = renderOwnedPresentation({
@@ -925,6 +929,7 @@ function createRendererResolver(
 				return view;
 			},
 			renderResult(result, renderOptions, theme, context) {
+				runtime.rememberRow(context.toolCallId, context.invalidate);
 				const resultContext = {
 					...context,
 					expanded: renderOptions.expanded,
@@ -1013,9 +1018,14 @@ export function registerCollapsibleToolRenderer(
 	const disposers: (() => void)[] = [
 		pi.on("tool_execution_start", (event) => {
 			runtime.tracker.recordStart(event);
+			// A nested call has no row of its own until the container redraws, so the container is
+			// rebuilt the moment the call starts rather than when its result arrives.
+			runtime.repaintParent(event.parentToolCallId);
 		}),
 		pi.on("tool_execution_end", (event) => {
 			runtime.tracker.recordEnd(event);
+			if (event.parentToolCallId === undefined) runtime.forgetRow(event.toolCallId);
+			else runtime.repaintParent(event.parentToolCallId);
 		}),
 		pi.on("tool_call", (event) => {
 			runtime.tracker.recordResolved(event);
