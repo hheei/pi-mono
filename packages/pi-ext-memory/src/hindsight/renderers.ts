@@ -3,10 +3,14 @@ import { type Component, stripTerminalSequences, truncateToWidth } from "@earend
 import { agentResultText, isRecord } from "@hheei/pi-ext-core";
 import { HINDSIGHT_MCP_SERVER_NAME, isHindsightBusinessError } from "./mcp.js";
 
-function renderBox(lines: readonly string[]): Component {
+/** A self shell owns its own padding, so the configured output pad is applied here. */
+function renderBox(lines: readonly string[], outputPad: number): Component {
+	const pad = Math.max(0, outputPad);
+	const leftPad = " ".repeat(pad);
 	return {
 		render(width: number): string[] {
-			return lines.map((line) => truncateToWidth(line, Math.max(1, width), "…"));
+			const inner = Math.max(1, width - pad * 2);
+			return lines.map((line) => leftPad + truncateToWidth(line, inner, "…"));
 		},
 		invalidate(): void {},
 	};
@@ -20,7 +24,7 @@ export function registerHindsightRenderers(pi: ExtensionAPI): void {
 		const name = toolName.slice(prefix.length);
 		return {
 			renderShell: "self",
-			renderCall(args, theme) {
+			renderCall(args, theme, context) {
 				const query = isRecord(args)
 					? typeof args.query === "string"
 						? args.query
@@ -47,7 +51,7 @@ export function registerHindsightRenderers(pi: ExtensionAPI): void {
 						}
 					}
 				}
-				return renderBox(rows);
+				return renderBox(rows, context.outputPad);
 			},
 			renderResult(result, _options, theme, context) {
 				let text = agentResultText(result);
@@ -59,7 +63,7 @@ export function registerHindsightRenderers(pi: ExtensionAPI): void {
 				const lines = stripTerminalSequences(text)
 					.split("\n")
 					.map((line) => theme.fg(color, line));
-				return renderBox(lines);
+				return renderBox(lines, context.outputPad);
 			},
 		};
 	});

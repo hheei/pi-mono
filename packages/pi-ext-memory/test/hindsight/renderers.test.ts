@@ -24,6 +24,7 @@ function context(isError = false): never {
 		isPartial: false,
 		isError,
 		expanded: true,
+		outputPad: 0,
 		state: {},
 		invalidate: () => {},
 	} as never;
