@@ -1,9 +1,10 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { redactCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { resolveParallelApiKey } from "./parallel.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { getWebSearchConfigPath, requestSignal } from "./utils.ts";
 
 const PARALLEL_MCP_URL = "https://search.parallel.ai/mcp";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -32,15 +33,6 @@ interface ParallelMcpExtractResult extends ParallelMcpSearchResult {
 
 interface ParallelMcpSearchOptions extends SearchOptions {
 	includeContent?: boolean | undefined;
-}
-
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function normalizeDomain(value: string): string | null {
@@ -131,7 +123,7 @@ async function callParallelMcp(
 				method: "tools/call",
 				params: { name: toolName, arguments: args },
 			}),
-			signal: requestSignal(signal),
+			signal: requestSignal(signal, REQUEST_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = apiKey ? redactCredential(errorMessage(err), apiKey) : errorMessage(err);

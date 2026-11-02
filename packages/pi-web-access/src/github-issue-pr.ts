@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { errorMessage } from "@hheei/pi-ext-core";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { checkGhAvailable, showGhHint } from "./github-api.ts";
 import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig } from "./ssrf-protection.ts";
@@ -148,10 +149,6 @@ function validOwner(owner: string): boolean {
 
 function validRepo(repo: string): boolean {
 	return /^[A-Za-z0-9._-]{1,100}$/.test(repo) && repo !== "." && repo !== "..";
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function isAbortError(err: unknown): boolean {

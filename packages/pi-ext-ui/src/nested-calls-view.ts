@@ -14,8 +14,9 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { ToolPresentationProvider } from "@hheei/pi-ext-core";
+import { isRecord, type ToolPresentationProvider } from "@hheei/pi-ext-core";
 import { extractChildToolCopyText, inlinePresentation, nativeRequestCopy } from "./native-tools.js";
+import { formatDurationMs } from "./payload-parser.js";
 import type { NestedCallRecord, ToolRenderContext } from "./renderer.js";
 import {
 	type Collapsible,
@@ -31,10 +32,6 @@ import type { CapturedToolCall } from "./tracker.js";
 
 function truncate(text: string, width: number): string {
 	return truncateToWidth(text, Math.max(1, width));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -56,11 +53,6 @@ function copyText(text: string, request: string | undefined): string {
 		return stripTerminalSequences(text);
 	}
 	return request + stripTerminalSequences(text.slice(request.length));
-}
-
-function formatDuration(ms: number | undefined): string {
-	if (ms === undefined || !Number.isFinite(ms)) return "";
-	return ms < 1000 ? `${String(Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
 interface LineMapEntry {
@@ -365,7 +357,7 @@ export class NestedCallsView implements Component, Collapsible {
 					title: toolName,
 					summary: childSummary,
 					...(ownSummary === undefined || ownSummary === "" ? {} : { summaryStyled: true }),
-					meta: formatDuration(call.durationMs),
+					meta: formatDurationMs(call.durationMs),
 				},
 				theme,
 			);

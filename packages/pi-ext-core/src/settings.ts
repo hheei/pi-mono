@@ -113,8 +113,6 @@ export interface SettingsRegistry {
 	get(id: string): SettingsProvider | undefined;
 }
 
-export const SETTING_DESCRIPTION_MIN_LENGTH = 20;
-
 interface SettingsGroupClaim {
 	readonly token: symbol;
 }

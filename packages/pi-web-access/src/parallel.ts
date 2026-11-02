@@ -1,9 +1,10 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath, readWebSearchSection } from "./utils.ts";
+import { getWebSearchConfigPath, readWebSearchSection, requestSignal } from "./utils.ts";
 
 const PARALLEL_SEARCH_URL = "https://api.parallel.ai/v1/search";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
@@ -121,15 +122,6 @@ export function hasParallelApiKey(): boolean {
 
 export function isParallelAvailable(): boolean {
 	return hasParallelApiKey();
-}
-
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function activityContext(
@@ -364,7 +356,7 @@ async function parallelFetch(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(signal),
+			signal: requestSignal(signal, SEARCH_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = errorMessage(err);

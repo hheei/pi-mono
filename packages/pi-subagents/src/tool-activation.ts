@@ -10,8 +10,6 @@ export const INTERACTIVE_TOOL_NAMES = [
 	"agents_dashboard",
 ] as const;
 
-export type InteractiveToolName = (typeof INTERACTIVE_TOOL_NAMES)[number];
-
 export const SUBAGENT_OPTIONAL_TOOL_KEY = "subagents";
 export const SUBAGENT_OPTIONAL_TOOL_BULLET =
 	'subagents (query: "agent"): Agent orchestration and delegation (agents_delegate, agents_get, agents_stop, agents_dashboard).';

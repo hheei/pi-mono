@@ -77,11 +77,6 @@ export interface ResearchSearchResponse {
 	results: ResearchSearchResult[];
 	summary?: string;
 }
-export interface ResearchProvider {
-	name: string;
-	search(req: ResearchSearchRequest): Promise<ResearchSearchResponse>;
-}
-
 const OFFICIAL_DOCS_HOSTS = /^(developers\.|docs\.|learn\.|reference\.)|\.github\.io$/i;
 const OFFICIAL_DOCS_PATHS = /\/(docs?|reference)(\/|\b)/i;
 const VENDOR_DOCS_PATHS = /\/(documentation|docs?)\//i;

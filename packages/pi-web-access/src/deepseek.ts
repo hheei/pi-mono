@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -101,10 +102,6 @@ function buildQuery(query: string, options: SearchOptions): string {
 
 function text(value: unknown): string {
 	return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 // DeepSeek Fetch escapes Markdown punctuation even when the content is already Markdown.

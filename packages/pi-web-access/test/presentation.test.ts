@@ -26,6 +26,7 @@ const plainContext = {
 	args: {},
 	isError: false,
 	isPartial: false,
+	keyText: () => "ctrl+o",
 } as unknown as ToolPresentationContext;
 
 describe("Web search presentation", () => {

@@ -1,10 +1,11 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { getWebSearchConfigPath, readWebSearchSection } from "./utils.ts";
+import { getWebSearchConfigPath, readWebSearchSection, requestSignal } from "./utils.ts";
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -215,15 +216,6 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
 	if (filters.exclude.some((domain) => domainMatches(hostname, domain))) return false;
 	if (filters.include.length === 0) return true;
 	return filters.include.some((domain) => domainMatches(hostname, domain));
-}
-
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 // Text that did not originate here — a proxied response body, a `JSON.parse`
@@ -449,7 +441,7 @@ export async function searchWithBrightData(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(options.signal),
+			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = errorMessage(err);

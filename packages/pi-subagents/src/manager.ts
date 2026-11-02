@@ -122,12 +122,6 @@ import {
 	transcriptFacts,
 } from "./state.js";
 
-/**
- * How long an idle child keeps its runtime. A background child holds a whole Pi process and its
- * session lock, so an idle one is reclaimed after this window and a later `agents_delegate` starts it
- * again from the same session.
- */
-export const SUBAGENT_IDLE_TIMEOUT_MS = 15_000;
 export const SUBAGENT_SETTLED_CLOSE_TIMEOUT_MS = 15_000;
 
 /** How long stop waits for an adopted child's bridge to go away before calling the exit unconfirmed. */

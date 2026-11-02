@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -86,10 +87,6 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
 	const matches = (domain: string) => hostname === domain || hostname.endsWith(`.${domain}`);
 	if (filters.exclude.some(matches)) return false;
 	return filters.include.length === 0 || filters.include.some(matches);
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function invalidResponse(message: string): Error {

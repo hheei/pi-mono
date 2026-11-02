@@ -203,10 +203,6 @@ function grepIncomplete(value: unknown): GrepIncomplete | undefined {
 	};
 }
 
-export function grepHasIncompleteAccess(value: unknown): boolean {
-	return grepIncomplete(value) !== undefined;
-}
-
 export function grepHasNoSearchablePaths(value: unknown): boolean {
 	return grepIncomplete(value)?.noSearchablePaths === true;
 }

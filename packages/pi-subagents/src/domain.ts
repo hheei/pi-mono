@@ -1,7 +1,6 @@
 import { isRecord } from "@hheei/pi-ext-core";
 
 export const PROTOCOL_VERSION = 1 as const;
-export const REGISTRY_VERSION = 1 as const;
 
 export type SubagentState = "running" | "done" | "blocked" | "error";
 
@@ -59,11 +58,6 @@ export const VISUAL_SUBAGENT_TONE: Record<
 	blocked: "warning",
 	error: "error",
 };
-
-export const SUBAGENT_GLYPH: Record<SubagentState, string> = VISUAL_SUBAGENT_GLYPH;
-
-export const SUBAGENT_TONE: Record<SubagentState, "accent" | "success" | "warning" | "error"> =
-	VISUAL_SUBAGENT_TONE;
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type LaunchValueSource = "agent" | "parent";

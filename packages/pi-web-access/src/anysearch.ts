@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
@@ -44,10 +45,6 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 		environmentValue: process.env.ANYSEARCH_API_KEY,
 		signal,
 	});
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function invalidResponse(message: string): Error {

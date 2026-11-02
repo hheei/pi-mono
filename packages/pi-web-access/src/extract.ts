@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import pLimit from "p-limit";
 import type TurndownService from "turndown";
 import { activityMonitor } from "./activity.ts";
@@ -196,16 +197,6 @@ async function extractWithDefuddle(
 	return typeof result.content === "string"
 		? { title: result.title, content: result.content }
 		: null;
-}
-
-export { loadSsrfConfig } from "./ssrf-protection.ts";
-
-export function loadSsrfAllowRanges(): string[] {
-	return loadSsrfConfig().allowRanges;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function isConfigParseError(err: unknown): boolean {

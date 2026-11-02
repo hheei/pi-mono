@@ -44,18 +44,6 @@ const REQUIRED_COOKIES = ["__Secure-1PSID", "__Secure-1PSIDTS"];
 // standalone test environments).
 let geminiFetchImpl: typeof fetch | null = null;
 
-// Test-only hook: lets tests inject a simulated transport instead of patching
-// globalThis.fetch. Gemini Web deliberately bypasses the ambient global fetch
-// (inside the pi host agent it is constrained to undici's 16 KiB
-// maxHeaderSize and cannot serve Google's /app page over HTTP/1.1), so
-// globalThis.fetch patching is no longer a reliable way to intercept these
-// requests.
-export function setGeminiFetchOverrideForTests(fetchImpl: typeof fetch | null): void {
-	geminiFetchOverride = fetchImpl;
-}
-
-let geminiFetchOverride: typeof fetch | null = null;
-
 // The header budget Gemini Web needs for Google frontend responses.
 // Google's /app page exceeds undici's default 16 KiB maxHeaderSize when
 // served over HTTP/1.1, which is how pi's global dispatcher operates.
@@ -84,7 +72,6 @@ export function createGeminiFetch(undiciImpl: typeof import("undici")): typeof f
 }
 
 export async function resolveGeminiFetch(): Promise<typeof fetch> {
-	if (geminiFetchOverride) return geminiFetchOverride;
 	if (geminiFetchImpl) return geminiFetchImpl;
 
 	let undici: typeof import("undici");

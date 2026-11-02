@@ -7,13 +7,9 @@ import {
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, hyperlink, stripTerminalSequences } from "@earendil-works/pi-tui";
+import { isRecord } from "@hheei/pi-ext-core";
 import { type DiffLine, type DiffSource, diffStats } from "./diff-view.js";
-import {
-	formatTimeoutFact,
-	isRecord,
-	type NestedCallRecord,
-	parseCallArgs,
-} from "./payload-parser.js";
+import { formatTimeoutFact, type NestedCallRecord, parseCallArgs } from "./payload-parser.js";
 import type { ToolStatusKind } from "./tool-view.js";
 import type { CapturedToolCall } from "./tracker.js";
 

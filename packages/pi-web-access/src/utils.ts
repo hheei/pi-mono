@@ -16,6 +16,15 @@ export {
 	WEB_SEARCH_SETTINGS_KEY,
 } from "./settings.ts";
 
+/**
+ * The request signal: the caller's cancellation combined with our own timeout. Every provider
+ * needs this exact pair, and `AbortSignal.any` is the only correct way to keep both.
+ */
+export function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+	const timeout = AbortSignal.timeout(timeoutMs);
+	return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 interface ApiBaseUrlOptions {
 	configKey: string;
 	configuredValue: unknown;

@@ -1,10 +1,11 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { getWebSearchConfigPath, readWebSearchSection } from "./utils.ts";
+import { getWebSearchConfigPath, readWebSearchSection, requestSignal } from "./utils.ts";
 
 const SEARCHINFINITY_SEARCH_URL = "https://torchlight.byteintlapi.com/search_api/web_search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -80,15 +81,6 @@ export function isSearchinfinityAvailable(): boolean {
 		configuredValue: loadConfig().searchinfinityApiKey,
 		environmentValue: process.env.SEARCHINFINITY_API_KEY,
 	});
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function mapRecencyFilter(recency: SearchOptions["recencyFilter"]): string | undefined {

@@ -1,10 +1,11 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { getWebSearchConfigPath, readWebSearchSection } from "./utils.ts";
+import { getWebSearchConfigPath, readWebSearchSection, requestSignal } from "./utils.ts";
 
 const SERPDIVE_API_URL = "https://api.serpdive.com/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -132,15 +133,6 @@ function applyRecencyHint(query: string, recencyFilter: SearchOptions["recencyFi
 	return hint ? `${query} ${hint}` : query;
 }
 
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
 function mapResults(
 	results: SerpdiveResult[] | undefined,
 	numResults: number,
@@ -233,7 +225,7 @@ export async function searchWithSerpdive(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			signal: requestSignal(options.signal),
+			signal: requestSignal(options.signal, SEARCH_TIMEOUT_MS),
 		});
 	} catch (err) {
 		const message = errorMessage(err);

@@ -1,8 +1,9 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { type Lookup, validateRemoteUrl } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath, readWebSearchSection } from "./utils.ts";
+import { getWebSearchConfigPath, readWebSearchSection, requestSignal } from "./utils.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
 const BRIGHTDATA_REQUEST_URL = "https://api.brightdata.com/request";
@@ -101,15 +102,6 @@ async function getApiKey(signal?: AbortSignal): Promise<string> {
 	return apiKey;
 }
 
-function requestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([timeout, signal]) : timeout;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
 function isAbortError(err: unknown): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
@@ -196,7 +188,7 @@ async function brightDataRequest(
 				method: "POST",
 				headers,
 				body: JSON.stringify(unlockerBody(url, zone)),
-				signal: requestSignal(options?.timeoutMs ?? EXTRACT_TIMEOUT_MS, signal),
+				signal: requestSignal(signal, options?.timeoutMs ?? EXTRACT_TIMEOUT_MS),
 			},
 			options,
 		);

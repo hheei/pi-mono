@@ -2,7 +2,7 @@ import { createSign } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { CredentialResolutionError, redactCredential } from "./credential-source.ts";
+import { CredentialResolutionError } from "./credential-source.ts";
 import { getWebSearchConfigPath, readWebSearchSection } from "./utils.ts";
 
 const _CONFIG_PATH = getWebSearchConfigPath();
@@ -183,10 +183,6 @@ interface CachedToken {
 
 let cachedToken: CachedToken | null = null;
 
-export function clearAdcTokenCache(): void {
-	cachedToken = null;
-}
-
 /**
  * Classifies a failed OAuth token exchange. Only explicit credential/authorization
  * rejections (400 invalid_client/invalid_grant/invalid_scope, 401, 403 denied)
@@ -335,8 +331,4 @@ function hasExplicitApiBase(): boolean {
 	if (fromEnv) return true;
 	const configured = loadConfig().geminiBaseUrl;
 	return typeof configured === "string" && configured.trim().length > 0;
-}
-
-export function redactAdcToken(text: string): string {
-	return cachedToken ? redactCredential(text, cachedToken.token) : text;
 }

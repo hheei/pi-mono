@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -46,10 +47,6 @@ export function isXcrawlAvailable(): boolean {
 		configuredValue: loadConfig().xcrawlApiKey,
 		environmentValue: process.env.XCRAWL_API_KEY,
 	});
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function invalidResponse(message: string): Error {

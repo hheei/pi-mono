@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -110,10 +111,6 @@ function buildSearchPrompt(query: string, options: SearchOptions, numResults: nu
 	if (filters.exclude.length > 0)
 		lines.push(`Do not use sources from: ${filters.exclude.slice(0, 100).join(", ")}.`);
 	return lines.length > 0 ? `${lines.join(" ")}\n\n${query}` : query;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function invalidResponse(message: string): Error {

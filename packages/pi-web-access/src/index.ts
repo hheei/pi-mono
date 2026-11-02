@@ -221,8 +221,6 @@ const fetchContentOutputSchema = Type.Object({
 });
 
 type CuratorWorkflow = "summary-review";
-export type CuratorProvider = SearchProvider;
-
 interface CuratorBootstrap {
 	availableProviders: ProviderAvailability;
 	defaultProvider: SearchProvider;

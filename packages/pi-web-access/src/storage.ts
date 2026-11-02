@@ -625,11 +625,6 @@ function isValidStoredData(data: unknown): data is StoredSearchData {
 	return true;
 }
 
-export function restoreFromSession(ctx: ExtensionContext): void {
-	storedResults.clear();
-	loadSessionResults(ctx);
-}
-
 /** Add one session's stored results to memory, leaving other sessions' results in place,
  * and return the results it loaded. A host that runs several sessions at once (one extension
  * instance per session) restores each with this, holds their ids with holdResults, and

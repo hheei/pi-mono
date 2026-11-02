@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -5,7 +6,7 @@ import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { getWebSearchConfigPath, readWebSearchSection } from "./utils.ts";
+import { getWebSearchConfigPath, readWebSearchSection, requestSignal } from "./utils.ts";
 
 const SEARCH1API_SEARCH_URL = "https://api.search1api.com/search";
 const SEARCH1API_CRAWL_URL = "https://api.search1api.com/crawl";
@@ -73,15 +74,6 @@ export function isSearch1APIAvailable(): boolean {
 		configuredValue: loadConfig().search1apiApiKey,
 		environmentValue: process.env.SEARCH1API_KEY,
 	});
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
-function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function mapDomainFilter(domainFilter: string[] | undefined): {

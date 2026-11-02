@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { isRecord } from "@hheei/pi-ext-core";
 import type { ToolStatusKind } from "./tool-view.js";
 
 export const RESOLVED_CALLS_KEY = "__piExtUiResolvedCalls";
@@ -21,10 +22,6 @@ export interface NestedCallRecord {
 	readonly durationMs?: number | undefined;
 	readonly cost?: number | undefined;
 	readonly error?: string | undefined;
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function estimateStreamingTokens(args: unknown): number {

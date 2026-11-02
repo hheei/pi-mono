@@ -1,11 +1,12 @@
 import { activityMonitor } from "./activity.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import {
 	fetchWithCredentialRedirects,
 	getWebSearchConfigPath,
 	readWebSearchSection,
+	requestSignal,
 	resolveApiBaseUrl,
 } from "./utils.ts";
 
@@ -82,11 +83,6 @@ function exaApiHeaders(apiKey: string): Record<string, string> {
 		"Content-Type": "application/json",
 		"x-exa-integration": "pi-web-access",
 	};
-}
-
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(60000);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function recencyToStartDate(filter: string): string {
@@ -228,7 +224,7 @@ export async function callExaMcp(
 				arguments: args,
 			},
 		}),
-		signal: requestSignal(signal),
+		signal: requestSignal(signal, 60_000),
 	});
 
 	if (!response.ok) {
@@ -474,14 +470,6 @@ export function isExaAvailable(): boolean {
 	return true;
 }
 
-export function hasExaApiKey(): boolean {
-	return hasCredentialSource({
-		provider: "Exa",
-		configuredValue: loadConfig().exaApiKey,
-		environmentValue: process.env.EXA_API_KEY,
-	});
-}
-
 export async function searchWithExa(
 	query: string,
 	options: ExaSearchOptions = {},
@@ -506,7 +494,7 @@ export async function searchWithExa(
 						? { text: true, highlights: true }
 						: { highlights: true },
 				}),
-				signal: requestSignal(options.signal),
+				signal: requestSignal(options.signal, 60_000),
 			},
 			["x-api-key"],
 		);

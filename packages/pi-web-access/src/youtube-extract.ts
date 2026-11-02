@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import {
 	type ExtractedContent,
@@ -29,10 +30,6 @@ Format as markdown.`;
 
 const YOUTUBE_REGEX =
 	/(?:(?:www\.|m\.)?youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
 
 function shouldRethrow(err: unknown): boolean {
 	return errorMessage(err).startsWith("Failed to parse ");

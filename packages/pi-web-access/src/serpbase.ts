@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -108,10 +109,6 @@ function buildQuery(query: string, filters: DomainFilters): string {
 		parts.push(`(${filters.include.map((domain) => `site:${domain}`).join(" OR ")})`);
 	for (const domain of filters.exclude) parts.push(`-site:${domain}`);
 	return parts.join(" ");
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function invalidResponse(message: string): Error {

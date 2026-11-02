@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -8,7 +9,12 @@ import {
 	type SsrfConfig,
 	validateRemoteUrl,
 } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath, isLoopbackHostname, readWebSearchSection } from "./utils.ts";
+import {
+	getWebSearchConfigPath,
+	isLoopbackHostname,
+	readWebSearchSection,
+	requestSignal,
+} from "./utils.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
 const EXTRACT_TIMEOUT_MS = 60_000;
@@ -77,15 +83,6 @@ async function getApiToken(signal?: AbortSignal): Promise<string | null> {
 	});
 }
 
-function requestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([timeout, signal]) : timeout;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
 function isAbortException(err: unknown): boolean {
 	return err instanceof DOMException && (err.name === "AbortError" || err.name === "TimeoutError");
 }
@@ -121,7 +118,7 @@ export async function extractWithCrawl4ai(
 		method: "POST",
 		headers,
 		body: JSON.stringify({ url, f: MARKDOWN_FILTER }),
-		signal: requestSignal(options?.timeoutMs ?? EXTRACT_TIMEOUT_MS, signal),
+		signal: requestSignal(signal, options?.timeoutMs ?? EXTRACT_TIMEOUT_MS),
 	};
 	let seeOther = false;
 	const activityId = activityMonitor.logStart({ type: "fetch", url: requestUrl.toString() });

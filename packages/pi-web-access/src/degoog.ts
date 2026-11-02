@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -171,10 +172,6 @@ function matchesDomainFilters(url: string, filters: NormalizedDomainFilters): bo
 
 function resultText(value: unknown): string {
 	return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function invalidResponse(message: string): Error {

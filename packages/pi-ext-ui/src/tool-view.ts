@@ -12,6 +12,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { isRecord } from "@hheei/pi-ext-core";
 import { surfaceBlock } from "./background.js";
 
 export type FoldLevel = 0 | 1 | 2;
@@ -111,10 +112,6 @@ const DEFAULT_MAX_SECTION_LINES = 9;
 export const MAX_LEVEL2_SECTION_LINES = 500;
 export const MAX_LEVEL2_BYTES = 64 * 1024;
 const DEFAULT_COPY_FEEDBACK_MS = 1200;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function transitionFoldLevel(current: FoldLevel, ctrlKey: boolean): FoldLevel {
 	if (current === 0) {

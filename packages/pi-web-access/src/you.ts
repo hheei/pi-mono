@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -56,10 +57,6 @@ function mapDomainFilter(domainFilter: string[] | undefined): {
 		...(include_domains.length > 0 ? { include_domains } : {}),
 		...(exclude_domains.length > 0 ? { exclude_domains } : {}),
 	};
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function parseWebResults(value: unknown): unknown[] {

@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
 import { isBaizhiAvailable, searchWithBaizhi } from "./baizhi.ts";
@@ -384,10 +385,6 @@ export interface FullSearchOptions extends SearchOptions {
 	extensionContext?: ExtensionContext | undefined;
 	/** Forwarded to providers that understand it (currently Exa); ignored elsewhere. */
 	category?: string | undefined;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function isAbortError(err: unknown): boolean {

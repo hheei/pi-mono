@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -77,10 +78,6 @@ function recencyToStartDate(filter: SearchOptions["recencyFilter"]): string | un
 
 function text(value: unknown, limit: number): string {
 	return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, limit) : "";
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function invalidResponse(message: string): Error {

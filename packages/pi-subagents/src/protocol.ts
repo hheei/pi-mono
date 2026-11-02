@@ -118,11 +118,6 @@ export const EventFrameSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
-export const PromptPayloadSchema = Type.Object(
-	{ message: nonEmptyString },
-	{ additionalProperties: false },
-);
-
 export const ContactReportPayloadSchema = Type.Object(
 	{
 		type: Type.Literal("pi_subagent_report"),

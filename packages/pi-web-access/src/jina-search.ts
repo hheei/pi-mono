@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
@@ -106,10 +107,6 @@ function requestSignal(signal?: AbortSignal): { signal: AbortSignal; timeout: Ab
 		timeout,
 		signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
 	};
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function parseItems(value: unknown): JinaSearchItem[] {

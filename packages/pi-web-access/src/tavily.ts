@@ -1,3 +1,4 @@
+import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -8,6 +9,7 @@ import {
 	fetchWithCredentialRedirects,
 	getWebSearchConfigPath,
 	readWebSearchSection,
+	requestSignal,
 	resolveApiBaseUrl,
 } from "./utils.ts";
 
@@ -107,15 +109,6 @@ function mapDomainFilter(domainFilter: string[] | undefined): {
 	};
 }
 
-function requestSignal(signal?: AbortSignal): AbortSignal {
-	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
-}
-
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
 function mapResults(
 	results: TavilyResult[] | undefined,
 	numResults: number,
@@ -176,7 +169,7 @@ export async function searchWithTavily(
 		...mapDomainFilter(options.domainFilter),
 	};
 
-	const signal = requestSignal(options.signal);
+	const signal = requestSignal(options.signal, SEARCH_TIMEOUT_MS);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let data: TavilyResponse;
 	try {
