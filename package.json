@@ -7,7 +7,7 @@
 	"packageManager": "pnpm@12.4.1",
 	"scripts": {
 		"pi-dev": "scripts/pi-dev",
-		"build": "pnpm --filter @hheei/pi-ext-core run build && pnpm --filter @hheei/pi-ext-memory --filter @hheei/pi-ext-addon --filter @hheei/pi-ext-tools --filter @hheei/pi-bg-bash --filter @hheei/pi-apply-patch --filter @hheei/pi-python-eval --filter @hheei/pi-todo --filter @hheei/pi-ext-ui --filter @hheei/pi-settings --filter @hheei/pi-status --filter @hheei/pi-optimizer --filter @hheei/pi-subagents --filter @hheei/pi-loadout --filter @hheei/pi-web-access run build",
+		"build": "pnpm --filter @hheei/pi-ext-core run build && pnpm --filter @hheei/pi-ext-memory --filter @hheei/pi-ext-addon --filter @hheei/pi-ext-tools --filter @hheei/pi-bg-bash --filter @hheei/pi-apply-patch --filter @hheei/pi-python-eval --filter @hheei/pi-todo --filter @hheei/pi-ext-ui --filter @hheei/pi-settings --filter @hheei/pi-status --filter @hheei/pi-optimizer --filter @hheei/pi-subagents --filter @hheei/pi-loadout --filter @hheei/pi-web-access --filter @hheei/pi-ask-user run build",
 		"validate:packages": "node --test scripts/package-artifact.test.mjs scripts/publish-packages.test.mjs && node scripts/validate-package-artifacts.mjs",
 		"check:changed": "node scripts/check-changed.mjs",
 		"check:changed:fix": "node scripts/check-changed.mjs --write",

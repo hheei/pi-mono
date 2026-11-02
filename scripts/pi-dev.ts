@@ -26,6 +26,7 @@ const builtPackageNames = [
 	"pi-status",
 	"pi-subagents",
 	"pi-web-access",
+	"pi-ask-user",
 ] as const;
 // Extension sources loaded explicitly next to the local packages: an external package that is not
 // built here, and the built-ins that `--no-extensions` below would otherwise disable.
