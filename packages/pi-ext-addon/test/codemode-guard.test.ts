@@ -287,7 +287,16 @@ describe("registerCodemodeGuardMessageRenderer", () => {
 
 		registerCodemodeGuardMessageRenderer(pi);
 		const message = { customType: CODEMODE_REMINDER_CUSTOM_TYPE, content: "Direct reminder" };
-		const comp = renderer!(message, { expanded: false, outputPad: 0 }, theme) as {
+		const comp = renderer!(
+			message,
+			{
+				expanded: false,
+				outputPad: 0,
+				keyText: () => "",
+				keyHint: (_keybinding: string, description: string) => description,
+			},
+			theme,
+		) as {
 			render(w: number): string[];
 		};
 		expect(comp).toBeDefined();

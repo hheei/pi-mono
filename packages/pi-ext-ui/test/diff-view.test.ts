@@ -60,6 +60,8 @@ function createMockContext(overrides?: Partial<ToolRenderContext>): ToolRenderCo
 		isError: false,
 		durationMs: undefined,
 		outputPad: 0,
+		keyText: () => "",
+		keyHint: (_keybinding, description) => description,
 		...overrides,
 	};
 }

@@ -206,7 +206,7 @@ describe("python_eval rich presentation", () => {
 			theme,
 			context(),
 		);
-		expect(sectionRows(presentation.sections)).toEqual(["print(1)", "<dim>1", "<dim>2"]);
+		expect(sectionRows(presentation.sections)).toEqual(["<mdCode>print(1)", "<dim>1", "<dim>2"]);
 		expect(presentation.output).toBe("1\n2");
 	});
 

@@ -42,15 +42,12 @@
 		"@hheei/pi-ext-core": "workspace:^"
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-agent-core": ">=1.2.0",
-		"@earendil-works/pi-coding-agent": ">=1.2.0",
-		"@earendil-works/pi-tui": ">=1.2.0",
+		"@earendil-works/pi-coding-agent": ">=1.5.0",
+		"@earendil-works/pi-tui": ">=1.5.0",
 		"typebox": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-agent-core": "^1.4.0",
-		"@earendil-works/pi-ai": "^1.4.0",
-		"@earendil-works/pi-coding-agent": "^1.4.0",
-		"@earendil-works/pi-tui": "^1.4.0"
+		"@earendil-works/pi-coding-agent": "^1.5.0",
+		"@earendil-works/pi-tui": "^1.5.0"
 	}
 }

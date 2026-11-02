@@ -36,6 +36,8 @@ function context(overrides: Partial<Context> = {}): Context {
 		lastComponent: undefined,
 		durationMs: 12,
 		outputPad: 0,
+		keyText: () => "",
+		keyHint: (_keybinding, description) => description,
 		...overrides,
 	};
 }

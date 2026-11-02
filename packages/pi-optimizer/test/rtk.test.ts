@@ -20,6 +20,7 @@ const result = (code: number, stdout = "", stderr = "", killed = false): ExecRes
 	stdout,
 	stderr,
 	killed,
+	truncated: false,
 });
 const VERSION_OUTPUT = result(0, "rtk 0.45.0\n");
 

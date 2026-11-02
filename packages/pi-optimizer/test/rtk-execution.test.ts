@@ -47,6 +47,7 @@ test("the real Pi agent executes rewritten native Bash arguments without extra i
 		stdout: args[0] === "--version" ? "rtk 0.45.0" : "printf optimizer-rewritten",
 		stderr: "",
 		killed: false,
+		truncated: false,
 	}));
 	// A temporary cache keeps the test out of the agent directory it would otherwise persist to.
 	const cachePath = join(await mkdtemp(join(tmpdir(), "pi-optimizer-rtk-")), "rtk-rewrites.json");

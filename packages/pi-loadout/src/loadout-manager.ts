@@ -190,10 +190,7 @@ export class LoadoutManager {
 					baseDir: metadata.baseDir,
 				});
 
-				const globalItem = globalResolved[category as keyof typeof globalResolved]?.find(
-					(candidate) => candidate.path === path,
-				);
-				const globalEnabled = globalItem?.enabled ?? true;
+				const globalEnabled = res.enabled;
 				const projectOverride = this.store.resolveProjectOverride(category, path, metadata);
 				// Derived from the two facts the panel shows, not from a second resolution: an
 				// untrusted project resolves to the global layer, which would otherwise report the

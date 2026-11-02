@@ -69,7 +69,13 @@ test("uses MessageView when available and keeps fallback rows width-safe", async
 			message: "done\n\u001b[31mfull output\u001b[0m\u0007",
 		},
 	};
-	expect(renderer(entry, { expanded: true }, theme as Theme)?.render(40)).toEqual(["view"]);
+	expect(
+		renderer(
+			entry,
+			{ expanded: true, keyText: () => "", keyHint: (_keybinding, description) => description },
+			theme as Theme,
+		)?.render(40),
+	).toEqual(["view"]);
 	expect(specs[0]?.header).toEqual({
 		kind: "bg-bash",
 		summary: "󰄴 bash-demo-1 · terminal · completed",
@@ -77,9 +83,17 @@ test("uses MessageView when available and keeps fallback rows width-safe", async
 	});
 	expect(specs[0]?.body).toBe("done\nfull output");
 	await hook.dispose();
-	const fallback = renderer({ ...entry, id: "entry-2" }, { expanded: true }, theme as Theme);
+	const fallback = renderer(
+		{ ...entry, id: "entry-2" },
+		{ expanded: true, keyText: () => "", keyHint: (_keybinding, description) => description },
+		theme as Theme,
+	);
 	expect(fallback?.render(80).join("\n")).toContain("full output");
-	const collapsed = renderer({ ...entry, id: "entry-3" }, { expanded: false }, theme as Theme);
+	const collapsed = renderer(
+		{ ...entry, id: "entry-3" },
+		{ expanded: false, keyText: () => "", keyHint: (_keybinding, description) => description },
+		theme as Theme,
+	);
 	expect(collapsed?.render(80).join("\n")).not.toContain("full output");
 	for (const width of [20, 80])
 		for (const row of fallback?.render(width) ?? [])

@@ -162,7 +162,11 @@ test("renders a stored entry through the registered renderer", () => {
 		pages: [page("kp-1", "Conventions", "Paths resolve.")],
 		truncated: false,
 	});
-	const rendered = renderer(entry(entries[0]?.data), { expanded: true }, theme)
+	const rendered = renderer(
+		entry(entries[0]?.data),
+		{ expanded: true, keyText: () => "", keyHint: (_keybinding, description) => description },
+		theme,
+	)
 		?.render(48)
 		.join("\n");
 	expect(rendered).toContain("kp-1");
@@ -182,7 +186,11 @@ test("keeps every row inside the terminal width", () => {
 		],
 		truncated: true,
 	});
-	const component = renderer(entry(entries[0]?.data), { expanded: true }, theme);
+	const component = renderer(
+		entry(entries[0]?.data),
+		{ expanded: true, keyText: () => "", keyHint: (_keybinding, description) => description },
+		theme,
+	);
 	for (const width of [40, 80]) {
 		for (const row of component?.render(width) ?? [])
 			expect(visibleWidth(row)).toBeLessThanOrEqual(width);
@@ -200,7 +208,15 @@ test("uses the optional message view when one is published", async () => {
 		summary: "recalled 2 pages",
 		details: { ...injected, truncated: true },
 	});
-	expect(renderer(stored, { expanded: false }, theme)?.render(40).join("\n")).toBe("view");
+	expect(
+		renderer(
+			stored,
+			{ expanded: false, keyText: () => "", keyHint: (_keybinding, description) => description },
+			theme,
+		)
+			?.render(40)
+			.join("\n"),
+	).toBe("view");
 	expect(spec?.header).toEqual({ kind: "memory", summary: "recalled 2 pages" });
 	expect(spec?.forcedExpanded).toBe(false);
 	expect(spec?.stateHolder).toBe(stored);

@@ -14,6 +14,7 @@ import {
 	getRegisteredToolRenderers,
 	getToolPresentationProvider,
 	hasOptionalToolRenderers,
+	isRecord,
 	type ToolPresentation,
 	type ToolPresentationChild,
 	type ToolPresentationProvider,
@@ -33,11 +34,8 @@ import {
 } from "./tool-view.js";
 import type { CapturedToolCall } from "./tracker.js";
 
-/** Optional host metadata is absent on early supported Pi versions. */
-export type ToolRenderContext = Parameters<NonNullable<ToolRenderers["renderCall"]>>[2] & {
-	readonly durationMs?: number | undefined;
-	readonly outputPad?: number | undefined;
-};
+/** Everything the host hands a tool renderer for one call. */
+export type ToolRenderContext = Parameters<NonNullable<ToolRenderers["renderCall"]>>[2];
 
 /**
  * Upstream tools whose call and result views pi-ext-ui still frames itself. Concrete tool packages
@@ -63,7 +61,6 @@ import {
 	extractNestedCalls,
 	formatCostUsd,
 	formatDurationMs,
-	isRecord,
 	type NestedCallRecord,
 	RESOLVED_CALLS_KEY,
 	resolveContainerStatus,

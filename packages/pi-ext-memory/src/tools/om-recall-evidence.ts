@@ -1,9 +1,9 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Message, ToolResultMessage } from "@earendil-works/pi-ai";
-import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import { createOptionalToolRenderers, isRecord, textToolResult } from "@hheei/pi-ext-core";
+import { Type } from "typebox";
 import {
 	formatRecallTimestamp,
 	renderRecallSourceEntries,

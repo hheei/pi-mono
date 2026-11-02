@@ -28,6 +28,8 @@ const context: Context = {
 	lastComponent: undefined,
 	durationMs: undefined,
 	outputPad: 0,
+	keyText: () => "",
+	keyHint: (_keybinding, description) => description,
 };
 function host(): ExtensionAPI {
 	return { events: {} } as unknown as ExtensionAPI;

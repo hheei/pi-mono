@@ -141,11 +141,23 @@ describe("optimizer info entries", () => {
 		const theme = {
 			fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
 		} as never;
-		const collapsed = renderer(entry, { expanded: false }, theme)?.render(48).join("\n");
-		const expanded = renderer(entry, { expanded: true }, theme)?.render(120).join("\n");
+		const collapsed = renderer(
+			entry,
+			{ expanded: false, keyText: () => "", keyHint: (_keybinding, description) => description },
+			theme,
+		)
+			?.render(48)
+			.join("\n");
+		const expanded = renderer(
+			entry,
+			{ expanded: true, keyText: () => "", keyHint: (_keybinding, description) => description },
+			theme,
+		)
+			?.render(120)
+			.join("\n");
 		const warning = renderer(
 			{ data: host.entries[1]?.data } as Parameters<Renderer>[0],
-			{ expanded: false },
+			{ expanded: false, keyText: () => "", keyHint: (_keybinding, description) => description },
 			theme,
 		)
 			?.render(48)
@@ -176,7 +188,15 @@ describe("optimizer info entries", () => {
 				warning: true,
 			},
 		} as Parameters<Renderer>[0];
-		expect(renderer(entry, { expanded: true }, theme)?.render(40).join("\n")).toBe("view");
+		expect(
+			renderer(
+				entry,
+				{ expanded: true, keyText: () => "", keyHint: (_keybinding, description) => description },
+				theme,
+			)
+				?.render(40)
+				.join("\n"),
+		).toBe("view");
 		expect(spec?.header).toEqual({
 			kind: "optimizer",
 			summary: "RTK query failed",

@@ -4,7 +4,6 @@ import {
 	type ExtensionUIContext,
 	InteractiveMode,
 	ToolExecutionComponent,
-	VERSION,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import { MessageView } from "./message-view.js";
@@ -33,8 +32,8 @@ interface Host {
 	readonly requestRender: () => void;
 }
 
-// Audited Pi >=1.0.1 compiles these TS-private members to ordinary JS properties.
-// All host-private access stays here; VERSION comes from the running host virtual module.
+// Audited Pi >=1.5.0 compiles these TS-private members to ordinary JS properties.
+// All host-private access stays here.
 function readHost(value: unknown): Host {
 	if (!record(value)) throw new Error("Invalid InteractiveMode instance");
 	const chat = value.chatContainer;
@@ -616,14 +615,6 @@ export function installHostToolGroups(
 	beginRun(): void;
 	endRun(): void;
 } {
-	const parts = VERSION.split(".").map(Number);
-	const [major = 0, minor = 0, patch = 0] = parts;
-	if (
-		parts.length !== 3 ||
-		!parts.every(Number.isInteger) ||
-		!(major > 1 || (major === 1 && (minor > 0 || (minor === 0 && patch >= 1))))
-	)
-		throw new Error(`Tool grouping requires Pi >=1.0.1; running ${VERSION}`);
 	const state = patchState();
 	const ui = context.ui;
 	if (state.owners.has(ui)) throw new Error("Tool grouping already owns this UI runtime");

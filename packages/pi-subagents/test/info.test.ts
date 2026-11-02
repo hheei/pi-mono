@@ -57,7 +57,11 @@ test("renders stored info entries safely at narrow and wide widths", () => {
 	};
 	// This renderer only calls Theme.fg; the fixture supplies that method.
 	for (const expanded of [false, true]) {
-		const component = renderer(entry, { expanded }, theme as Theme);
+		const component = renderer(
+			entry,
+			{ expanded, keyText: () => "", keyHint: (_keybinding, description) => description },
+			theme as Theme,
+		);
 		for (const width of [24, 80]) {
 			for (const row of component?.render(width) ?? []) {
 				expect(visibleWidth(row)).toBeLessThanOrEqual(width);
@@ -90,7 +94,11 @@ test("uses the optional message view and keeps an empty report collapsed", async
 		data: { id: "agent-21", agent: "worker", status: "done", message: "Complete report" },
 	};
 	expect(
-		renderer(entry, { expanded: true }, theme as Theme)
+		renderer(
+			entry,
+			{ expanded: true, keyText: () => "", keyHint: (_keybinding, description) => description },
+			theme as Theme,
+		)
 			?.render(40)
 			.join("\n"),
 	).toBe("view");
@@ -101,7 +109,11 @@ test("uses the optional message view and keeps an empty report collapsed", async
 	});
 	expect(specs[0]?.body).toBe("Complete report");
 	const empty = { ...entry, id: "entry-2", data: { ...entry.data, message: "  " } };
-	renderer(empty, { expanded: false }, theme as Theme);
+	renderer(
+		empty,
+		{ expanded: false, keyText: () => "", keyHint: (_keybinding, description) => description },
+		theme as Theme,
+	);
 	expect(specs[1]?.body).toBeUndefined();
 	expect(specs[1]?.header.tone).toBe("success");
 	await hook.dispose();

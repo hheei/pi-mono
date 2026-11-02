@@ -49,6 +49,8 @@ function context(args: unknown, overrides: Partial<RenderContext> = {}): RenderC
 		lastComponent: undefined,
 		durationMs: 12,
 		outputPad: 0,
+		keyText: () => "",
+		keyHint: (_keybinding, description) => description,
 		...overrides,
 	} as RenderContext;
 }

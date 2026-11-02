@@ -1,8 +1,7 @@
 import type { AgentContext, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
-import { Type } from "@earendil-works/pi-ai";
 import { textToolResult } from "@hheei/pi-ext-core";
-import type { Static } from "typebox";
+import { type Static, Type } from "typebox";
 import { debugLog } from "../../debug-log.js";
 import { hashId } from "../../ids.js";
 import { truncateRecordContent } from "../../serialize.js";

@@ -1,7 +1,6 @@
 import type { AgentContext, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
-import { Type } from "@earendil-works/pi-ai";
-import type { Static } from "typebox";
+import { type Static, Type } from "typebox";
 import { debugLog } from "../../debug-log.js";
 import {
 	OBSERVATION_KIND_DROP_RANK,

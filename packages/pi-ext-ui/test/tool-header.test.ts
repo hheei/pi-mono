@@ -40,6 +40,8 @@ function context(overrides: Partial<ToolRenderContext> = {}): ToolRenderContext 
 		lastComponent: undefined,
 		durationMs: 120,
 		outputPad: 0,
+		keyText: () => "",
+		keyHint: (_keybinding, description) => description,
 		...overrides,
 	};
 }

@@ -41,6 +41,8 @@ export function renderContextFor(
 		lastComponent: undefined,
 		durationMs: undefined,
 		outputPad: 0,
+		keyText: () => "",
+		keyHint: (_keybinding, description) => description,
 	};
 }
 
