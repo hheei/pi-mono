@@ -347,10 +347,26 @@ class _ToolMethod:
             raise TypeError("tool methods expect a dict of arguments")
         return _call_tool(self._name, payload)
 
+    # ponytail: atomic proxy singleton; copy/deepcopy returns self
+    def __copy__(self) -> Any:
+        return self
+
+    def __deepcopy__(self, memo: Any) -> Any:
+        return self
+
 
 class _ToolProxy:
     def __getattr__(self, name: str) -> _ToolMethod:
+        if name.startswith("_"):
+            raise AttributeError(f"'tools' object has no attribute {name!r}")
         return _ToolMethod(name)
+
+    # ponytail: atomic proxy singleton; copy/deepcopy returns self
+    def __copy__(self) -> Any:
+        return self
+
+    def __deepcopy__(self, memo: Any) -> Any:
+        return self
 
 
 def _compile_source(code: str) -> tuple[Any, bool]:

@@ -251,4 +251,28 @@ describe("Eval kernel namespace reporting", () => {
 			host.dispose();
 		}
 	});
+
+	test("supports copy and deepcopy on tools and rejects private dunder methods", async () => {
+		const host = new EvalKernelHost(process.cwd());
+		try {
+			const result = await run(
+				host,
+				[
+					"import copy",
+					"t1 = copy.copy(tools)",
+					"t2 = copy.deepcopy(tools)",
+					"fn = copy.deepcopy(tools.read)",
+					"state = {'tools': tools, 'data': [1, 2]}",
+					"state_copied = copy.deepcopy(state)",
+					"has_dunder = hasattr(tools, '__deepcopy__')",
+					"has_private = hasattr(tools, '_anything')",
+					"same = (t1 is tools) and (t2 is tools) and (state_copied['tools'] is tools)",
+					"same, has_dunder, has_private, state_copied['data']",
+				].join("\n"),
+			);
+			expect(result.value).toEqual([true, true, false, [1, 2]]);
+		} finally {
+			host.dispose();
+		}
+	});
 });
