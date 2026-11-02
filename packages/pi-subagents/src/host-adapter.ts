@@ -174,46 +174,61 @@ export interface HostAdapterOptions {
 export function createHerdrHostAdapter(options: HostAdapterOptions): HostAdapter {
 	const runner = options.runner ?? systemHostCommandRunner;
 	const timeoutMs = options.timeoutMs ?? 10_000;
+	const env = options.env ?? process.env;
 	return {
 		kind: "herdr",
 		async probe(): Promise<HostCapability> {
-			if (process.env.HERDR_ENV !== "1") {
-				return { host: "herdr", available: false, reason: "HERDR_ENV is not 1" };
-			}
-			const current = await runner.run("herdr", ["pane", "current", "--current"], { timeoutMs });
-			if (current.timedOut) {
-				return { host: "herdr", available: false, reason: "herdr pane probe timed out" };
-			}
-			if (current.exitCode === 127) {
-				return { host: "herdr", available: false, reason: current.stderr };
-			}
-			if (current.exitCode !== 0) {
+			// Availability is a fact about this process, never about the environment it inherited:
+			// `HERDR_ENV` and `HERDR_PANE_ID` outlive the pane that set them, so a host that inherits
+			// them (a GUI app started from a herdr pane, a daemon that outlived its workspace) would
+			// otherwise claim a panel it cannot draw. The pane has to prove it runs this process.
+			const ancestry = await processAncestry(runner, timeoutMs);
+			if (ancestry === undefined) {
 				return {
 					host: "herdr",
 					available: false,
-					reason: `herdr pane probe failed: ${current.stderr}`,
+					reason: "could not read this process tree",
 				};
 			}
-			const pane = parseHerdrPaneId(current.stdout);
-			return pane === undefined
-				? { host: "herdr", available: false, reason: "herdr probe returned no current pane id" }
-				: { host: "herdr", available: true, reason: `current pane ${pane}` };
+			const owned = await resolveHerdrOwnedPane(runner, timeoutMs, { ancestry, env });
+			return owned.pane === undefined
+				? {
+						host: "herdr",
+						available: false,
+						reason: owned.reason ?? "no herdr pane runs this process",
+					}
+				: {
+						host: "herdr",
+						available: true,
+						reason: `pane ${owned.pane.paneId} runs this process`,
+					};
 		},
 		async open(spec): Promise<HostAttachment> {
 			// A dedicated tab, not a split of the parent pane: the child TUI owns its own tab, the
 			// parent session keeps its layout and focus, and the tab is labeled with the child id so
 			// a human can tell whose panel it is.
-			const workspaceId = await resolveHerdrProcessWorkspaceId(
-				runner,
-				timeoutMs,
-				options.env ?? process.env,
-			);
-			const created = await runner.run("herdr", herdrTabCreateArgs(spec, workspaceId), {
+			const ancestry = await processAncestry(runner, timeoutMs);
+			if (ancestry === undefined) {
+				throw new Error("herdr panel: could not read this process tree");
+			}
+			const owned = await resolveHerdrOwnedPane(runner, timeoutMs, { ancestry, env });
+			if (owned.pane === undefined) {
+				throw new Error(`herdr panel: ${owned.reason ?? "no herdr pane runs this process"}`);
+			}
+			const created = await runner.run("herdr", herdrTabCreateArgs(spec, owned.pane.workspaceId), {
 				timeoutMs,
 			});
+			const failure = hostCommandFailure(created);
+			if (failure !== undefined) {
+				throw new Error(
+					`herdr tab create failed: ${failure.code}${failure.message === "" ? "" : ` (${failure.message})`}`,
+				);
+			}
 			const target = parseHerdrTab(created.stdout);
 			if (target === undefined) {
-				throw new Error("herdr tab create returned no tab and root pane id");
+				throw new Error(
+					`herdr tab create returned no tab and root pane id (${created.timedOut ? "timed out" : created.stderr.trim() || "no error reported"})`,
+				);
 			}
 			// pane run sends text+Enter to the tab's root shell. Timeout is not rollback: the tab
 			// already exists and the process may still start after the CLI deadline.
@@ -266,12 +281,16 @@ export function createCmuxHostAdapter(options: HostAdapterOptions): HostAdapter 
 		async probe(): Promise<HostCapability> {
 			const ping = await runner.run("cmux", ["ping"], { timeoutMs });
 			if (ping.timedOut) return { host: "cmux", available: false, reason: "cmux ping timed out" };
-			if (ping.exitCode !== 0) {
-				return { host: "cmux", available: false, reason: `cmux unavailable: ${ping.stderr}` };
+			if (ping.exitCode !== 0 || hostCommandFailure(ping) !== undefined) {
+				return { host: "cmux", available: false, reason: describeHostFailure(ping, "cmux ping") };
 			}
 			const capabilities = await runner.run("cmux", ["capabilities", "--json"], { timeoutMs });
-			if (capabilities.timedOut || capabilities.exitCode !== 0) {
-				return { host: "cmux", available: false, reason: "cmux capability query failed" };
+			if (!herdrListingSucceeded(capabilities) || hostCommandFailure(capabilities) !== undefined) {
+				return {
+					host: "cmux",
+					available: false,
+					reason: describeHostFailure(capabilities, "cmux capabilities"),
+				};
 			}
 			return { host: "cmux", available: true, reason: "cmux responded and exposed capabilities" };
 		},
@@ -281,6 +300,12 @@ export function createCmuxHostAdapter(options: HostAdapterOptions): HostAdapter 
 				["--json", "new-surface", "--command", cmuxLaunchCommand(spec)],
 				{ timeoutMs },
 			);
+			const failure = hostCommandFailure(launch);
+			if (failure !== undefined) {
+				throw new Error(
+					`cmux new-surface failed: ${failure.code}${failure.message === "" ? "" : ` (${failure.message})`}`,
+				);
+			}
 			const attachmentId = parseCmuxSurfaceId(launch.stdout);
 			if (attachmentId === undefined) {
 				throw new Error("cmux new-surface returned no surface id; process state is unknown");
@@ -367,8 +392,8 @@ function hostAttachment(options: HostAttachmentOptions): HostAttachment {
 
 /**
  * Herdr tab creation carries cwd, env, label, and explicit workspace id matching the parent
- * process, ensuring the child tab spawns in the process's own workspace rather than whatever
- * workspace happens to have user focus.
+ * process, ensuring the child tab spawns in the workspace of the pane that provably runs this
+ * process rather than whatever workspace happens to have user focus.
  */
 export function herdrTabCreateArgs(spec: LaunchSpec, workspaceId?: string): string[] {
 	const args = [
@@ -389,34 +414,87 @@ export function herdrTabCreateArgs(spec: LaunchSpec, workspaceId?: string): stri
 	return args;
 }
 
-export function parseHerdrWorkspaceId(output: string): string | undefined {
-	return parseJsonId(output, ["workspace_id", "workspaceId"]);
+/** One pane as `herdr pane list` reports it. */
+interface HerdrPaneEntry {
+	readonly paneId: string;
+	readonly tabId: string;
+	readonly workspaceId: string;
+}
+
+interface HerdrOwnership {
+	readonly pane?: HerdrPaneEntry;
+	readonly reason?: string;
 }
 
 /**
- * Resolves the workspace id of the current process so new tabs open in the same workspace.
- * Reads environment variables first, falling back to herdr pane queries.
+ * The kernel is the only source that ties this process to a pane: herdr reports the pane's
+ * foreground processes, and an inherited environment variable cannot fake a kernel answer. This
+ * process is included because a wrapper (`pnpm exec`, a supervisor) runs it as a child while the
+ * pane's foreground job is still the Pi above it.
  */
-export async function resolveHerdrProcessWorkspaceId(
+export async function processAncestry(
 	runner: HostCommandRunner,
 	timeoutMs: number,
-	env: NodeJS.ProcessEnv = process.env,
-): Promise<string | undefined> {
-	const envWorkspace = env.HERDR_WORKSPACE_ID?.trim();
-	if (envWorkspace) return envWorkspace;
-	const envPane = env.HERDR_PANE_ID?.trim();
-	if (envPane) {
-		const res = await runner.run("herdr", ["pane", "get", envPane], { timeoutMs });
-		if (res.exitCode === 0) {
-			const ws = parseHerdrWorkspaceId(res.stdout);
-			if (ws) return ws;
+): Promise<ReadonlySet<number> | undefined> {
+	const result = await runner.run("ps", ["-A", "-o", "pid=,ppid="], { timeoutMs });
+	if (!herdrListingSucceeded(result)) return undefined;
+	const parents = new Map<number, number>();
+	for (const line of result.stdout.split("\n")) {
+		const fields = line.trim().split(/\s+/);
+		if (fields.length < 2) continue;
+		const pid = Number.parseInt(fields[0] ?? "", 10);
+		const ppid = Number.parseInt(fields[1] ?? "", 10);
+		if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(ppid)) continue;
+		parents.set(pid, ppid);
+	}
+	const pids = new Set<number>();
+	let current: number | undefined = process.pid;
+	for (let depth = 0; current !== undefined && current > 0 && depth < 64; depth++) {
+		pids.add(current);
+		const parent: number | undefined = parents.get(current);
+		if (parent === undefined || parent === current) break;
+		current = parent;
+	}
+	return pids.size === 0 ? undefined : pids;
+}
+
+/**
+ * Finds the pane that is running this process. `HERDR_PANE_ID` only orders the candidates — the
+ * pane still has to prove it owns this process group — so an id inherited from a closed pane costs
+ * one query instead of a wrong answer.
+ */
+export async function resolveHerdrOwnedPane(
+	runner: HostCommandRunner,
+	timeoutMs: number,
+	options: { readonly ancestry: ReadonlySet<number>; readonly env?: NodeJS.ProcessEnv },
+): Promise<HerdrOwnership> {
+	const listed = await runner.run("herdr", ["pane", "list"], { timeoutMs });
+	if (!hostCommandSucceeded(listed)) {
+		return { reason: describeHostFailure(listed, "herdr pane list") };
+	}
+	const panes = herdrPaneEntries(listed.stdout);
+	if (panes.length === 0) return { reason: "herdr listed no panes" };
+	const hint = options.env?.HERDR_PANE_ID?.trim();
+	const ordered =
+		hint === undefined || hint === ""
+			? panes
+			: [
+					...panes.filter((pane) => pane.paneId === hint),
+					...panes.filter((pane) => pane.paneId !== hint),
+				];
+	let failure: string | undefined;
+	for (const pane of ordered) {
+		const info = await runner.run("herdr", ["pane", "process-info", "--pane", pane.paneId], {
+			timeoutMs,
+		});
+		if (!hostCommandSucceeded(info)) {
+			failure = describeHostFailure(info, `herdr pane process-info ${pane.paneId}`);
+			continue;
 		}
+		if (herdrPaneRunsProcess(info.stdout, options.ancestry)) return { pane };
 	}
-	const current = await runner.run("herdr", ["pane", "current", "--current"], { timeoutMs });
-	if (current.exitCode === 0) {
-		return parseHerdrWorkspaceId(current.stdout);
-	}
-	return undefined;
+	const mismatch = "no herdr pane runs this process";
+	return { reason: failure === undefined ? mismatch : `${mismatch} (${failure})` };
 }
 
 /**
@@ -627,6 +705,91 @@ function parseHerdrTab(
 	return { tabId, paneId };
 }
 
+function herdrPaneEntries(output: string): readonly HerdrPaneEntry[] {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return [];
+	}
+	const list = findNamedObject(parsed, "result")?.panes;
+	if (!Array.isArray(list)) return [];
+	const entries: HerdrPaneEntry[] = [];
+	for (const entry of list) {
+		if (typeof entry !== "object" || entry === null) continue;
+		const record = entry as Record<string, unknown>;
+		const paneId = record.pane_id;
+		const tabId = record.tab_id;
+		const workspaceId = record.workspace_id;
+		if (typeof paneId !== "string") continue;
+		if (typeof tabId !== "string") continue;
+		if (typeof workspaceId !== "string") continue;
+		entries.push({ paneId, tabId, workspaceId });
+	}
+	return entries;
+}
+
+/**
+ * True when the pane's foreground job is this process or one it descends from. The pane's shell is
+ * excluded: it is the idle fallback, so counting it would make every descendant of a pane — a
+ * backgrounded `pi &`, an app started from that terminal — claim the pane it was started from.
+ */
+function herdrPaneRunsProcess(output: string, ancestry: ReadonlySet<number>): boolean {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return false;
+	}
+	const info = findNamedObject(parsed, "process_info");
+	if (info === undefined) return false;
+	const shellPid = info.shell_pid;
+	const foreground = info.foreground_processes;
+	if (!Array.isArray(foreground)) return false;
+	return foreground.some((entry) => {
+		if (typeof entry !== "object" || entry === null) return false;
+		const pid = (entry as { pid?: unknown }).pid;
+		return typeof pid === "number" && pid !== shellPid && ancestry.has(pid);
+	});
+}
+
+interface HostCommandFailure {
+	readonly code: string;
+	readonly message: string;
+}
+
+/**
+ * Both hosts answer an API error as JSON with exit code 0, so the exit code is not a verdict and
+ * the error body is the only thing that says what went wrong.
+ */
+function hostCommandFailure(result: HostCommandResult): HostCommandFailure | undefined {
+	return hostCommandFailureFrom(result.stdout) ?? hostCommandFailureFrom(result.stderr);
+}
+
+function hostCommandFailureFrom(output: string): HostCommandFailure | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return undefined;
+	}
+	const error = findNamedObject(parsed, "error");
+	if (error === undefined) return undefined;
+	const code = typeof error.code === "string" ? error.code : "error";
+	const message = typeof error.message === "string" ? error.message : "";
+	return { code, message };
+}
+
+function describeHostFailure(result: HostCommandResult, what: string): string {
+	if (result.timedOut) return `${what} timed out`;
+	const failure = hostCommandFailure(result);
+	if (failure !== undefined) {
+		return `${what} failed: ${failure.code}${failure.message === "" ? "" : ` (${failure.message})`}`;
+	}
+	const detail = result.stderr.trim() || result.stdout.trim();
+	return detail === "" ? `${what} failed` : `${what} failed: ${detail}`;
+}
+
 /** Herdr `pane run` concatenates extra argv with spaces, so quoting happens here once. */
 function quotedArgv(command: string, argv: readonly string[]): string {
 	return [command, ...argv].map(shellQuote).join(" ");
@@ -659,10 +822,6 @@ function valueContainsString(value: unknown, target: string): boolean {
 	if (value === target) return true;
 	if (typeof value !== "object" || value === null) return false;
 	return Object.values(value).some((child) => valueContainsString(child, target));
-}
-
-function parseHerdrPaneId(output: string): string | undefined {
-	return parseJsonId(output, ["pane_id"]);
 }
 
 function parseCmuxSurfaceId(output: string): string | undefined {
@@ -709,26 +868,34 @@ function herdrListingSucceeded(result: HostCommandResult): boolean {
 }
 
 /**
+ * A host command succeeded only when it exited zero *and* answered without an error body: herdr
+ * reports API errors as JSON with exit code 0, so the exit code alone is not a verdict.
+ */
+function hostCommandSucceeded(result: HostCommandResult): boolean {
+	return herdrListingSucceeded(result) && hostCommandFailure(result) === undefined;
+}
+
+/**
  * Reads the pane's process state. A pane that no longer exists is a definite "not alive" — that is
  * how a closed panel looks — while a query that never ran or failed for any other reason is
  * unknown, because the caller closes the panel on "not alive".
  */
 export function herdrPaneAlive(result: HostCommandResult): boolean | undefined {
+	const failure = hostCommandFailure(result);
+	if (failure !== undefined) {
+		// A container that no longer exists is a definite "not alive" — that is how a closed panel
+		// looks — while any other rejection says nothing about the child.
+		return failure.code === "pane_not_found" || failure.code === "tab_not_found"
+			? false
+			: undefined;
+	}
 	if (herdrListingSucceeded(result)) return herdrChildProcessIsRunning(result.stdout);
-	// The CLI writes the error as JSON on stderr.
-	const code = herdrErrorCode(result.stderr) ?? herdrErrorCode(result.stdout);
-	if (code === "pane_not_found" || code === "tab_not_found") return false;
 	return undefined;
 }
 
 /** The error code of a herdr CLI failure, which reports it as JSON. */
 function herdrErrorCode(output: string): string | undefined {
-	try {
-		const parsed = JSON.parse(output) as { error?: { code?: unknown } };
-		return typeof parsed.error?.code === "string" ? parsed.error.code : undefined;
-	} catch {
-		return undefined;
-	}
+	return hostCommandFailureFrom(output)?.code;
 }
 
 function herdrChildProcessIsRunning(output: string): boolean {

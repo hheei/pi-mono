@@ -478,8 +478,12 @@ export class SubagentManager {
 	/**
 	 * Starts the child's runtime where its frozen presentation says. A panel child is owned by the
 	 * host, so this process keeps only the attachment handle; a background child is ours to kill.
+	 *
+	 * A panel is an optimization and the child is not. When the panel cannot be opened and the
+	 * caller did not ask for one by name, the record moves to the background and the child runs
+	 * anyway: nothing has been presented yet, so no panel is being taken away from anyone.
 	 */
-	async #start(record: SubagentRecord): Promise<void> {
+	async #start(record: SubagentRecord, panelRequired: boolean): Promise<string | undefined> {
 		// Whatever this child was doing before, a fresh runtime now serves the delegated session.
 		this.#leftSessions.delete(record.subagentId);
 		if (record.presentation === "panel") {
@@ -489,12 +493,24 @@ export class SubagentManager {
 			}
 			const launch = await openPanel(record);
 			if (launch.handle !== undefined) this.#attachments.set(record.subagentId, launch.handle);
-			if (launch.failure !== undefined) throw new Error(launch.failure);
-			return;
+			if (launch.failure === undefined) return undefined;
+			if (panelRequired) throw new Error(launch.failure);
+			const note = `Panel unavailable (${launch.failure}), so this child runs in the background`;
+			const background = await this.#update(record.subagentId, (current) => ({
+				...current,
+				presentation: "background",
+			}));
+			const fallback = await this.#deps.launch(background);
+			if (fallback.handle !== undefined) {
+				this.#watchRuntime(background.subagentId, fallback.handle);
+			}
+			if (fallback.failure !== undefined) throw new Error(`${note}; ${fallback.failure}`);
+			return note;
 		}
 		const launch = await this.#deps.launch(record);
 		if (launch.handle !== undefined) this.#watchRuntime(record.subagentId, launch.handle);
 		if (launch.failure !== undefined) throw new Error(launch.failure);
+		return undefined;
 	}
 
 	/**
@@ -1660,7 +1676,10 @@ export class SubagentManager {
 			childId = record.subagentId;
 			this.#working.add(childId);
 			this.#notify();
-			await withDeadline(this.#start(record), this.#deps.deadlineMs ?? 60_000);
+			const degraded = await withDeadline(
+				this.#start(record, input.presentation === "panel"),
+				this.#deps.deadlineMs ?? 60_000,
+			);
 			let path: string;
 			// A fresh child's first turn is version 1, claimed before the prompt goes out so a
 			// preceding `agent_start` cannot push the receipt onto a version that never settles.
@@ -1704,6 +1723,7 @@ export class SubagentManager {
 				const { latestSummary: _latestSummary, ...rest } = current;
 				return { ...rest, state: "running" };
 			});
+			const note = degraded ?? placement.note;
 			return {
 				child: publicChild(
 					(await this.#deps.registry.get(record.subagentId)) ?? record,
@@ -1711,7 +1731,7 @@ export class SubagentManager {
 					path,
 				),
 				path,
-				...(placement.note === undefined ? {} : { note: placement.note }),
+				...(note === undefined ? {} : { note }),
 			};
 		} catch (error) {
 			if (childId === undefined) return failure("spawn", errorMessage(error));
@@ -1799,7 +1819,7 @@ export class SubagentManager {
 					this.#projectors.set(id, createStateProjector(resumedRecord.state));
 				}
 				try {
-					await withDeadline(this.#start(resumedRecord), this.#deps.deadlineMs ?? 60_000);
+					await withDeadline(this.#start(resumedRecord, false), this.#deps.deadlineMs ?? 60_000);
 					isResumed = true;
 					// A new process counts its turns from one again, so this parent adopts the boundary the
 					// ledger already spent before it opens the next one.

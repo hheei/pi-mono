@@ -51,7 +51,8 @@ Use `/subagents` for complete status and management. `agents_delegate` with an e
 
 ## Host Integration and Isolation
 
-- **Herdr Workspace Affinity**: When spawning in Herdr, tabs are explicitly created in the parent process's current workspace (`--workspace <WORKSPACE_ID>`), preventing child tabs from jumping to whichever workspace happens to have user focus.
+- **Herdr Attachment Is A Fact**: A pane is only this parent's pane when the kernel says so — one of the pane's foreground processes (`herdr pane process-info`) must be this process or one of its ancestors, and only then is a tab created there (`--workspace <WORKSPACE_ID>`). The pane's own shell does not count, so `pi &` stays out. Inherited `HERDR_ENV`/`HERDR_PANE_ID` merely order the candidates, and `herdr pane current --current` (which answers where a human is looking) is never used as identity. No match means no panel and a headless child.
+- **Panel Failures Degrade**: When the panel cannot be opened and no explicit `panel` presentation was requested, the child runs in the background and the spawn result says why. Host error codes are surfaced instead of being folded into a generic message.
 - **Memory Isolation**: Both `PI_HINDSIGHT_DISABLE=1` and `PI_OBSERVATIONAL_MEMORY_DISABLE=1` are injected into child processes. Hindsight memory auto-registration, recall, and writeback are disabled, and the child bridge blocks all `mcp__hindsight__*` calls. Background Observational Memory workers (observation, reflection, compaction triggers) are suppressed in passive mode.
 
 ## Agent definitions

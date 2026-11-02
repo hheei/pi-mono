@@ -1168,22 +1168,38 @@ describe("SubagentManager over the bridge", () => {
 		expect(again).toMatchObject({ revision: 2, status: "failed" });
 	});
 
-	test("an unconfirmed panel startup does not freeze the child", async () => {
+	test("a panel that cannot open degrades the child to the background", async () => {
 		const test1 = await harness({ host: true });
 		test1.openPanel.mockImplementation(async () => ({
 			failure: "host timeout",
 		}));
-		expect(await test1.manager.spawn({ agent: "worker", task: "work" })).toMatchObject({
+		const spawned = await test1.manager.spawn({ agent: "worker", task: "work" });
+		if ("reason" in spawned) throw new Error(spawned.reason);
+		expect(spawned.note).toBe(
+			"Panel unavailable (host timeout), so this child runs in the background",
+		);
+		// The record says where the child actually runs, so nothing retries the panel later.
+		expect(spawned.child.presentation).toBe("background");
+		await expect(test1.manager.send("sa_child1", "continue")).resolves.toMatchObject({
+			id: "sa_child1",
+		});
+		expect(test1.openPanel).toHaveBeenCalledTimes(1);
+	});
+
+	test("an explicit panel request fails instead of degrading", async () => {
+		const test1 = await harness({ host: true });
+		test1.openPanel.mockImplementation(async () => ({
+			failure: "host timeout",
+		}));
+		expect(
+			await test1.manager.spawn({ agent: "worker", task: "work", presentation: "panel" }),
+		).toMatchObject({
 			childId: "sa_child1",
 			state: "error",
 			safeToRetry: true,
 			sideEffects: ["registry record persisted", "no runtime remains"],
 		});
-		// No writer is visible, so a send tries the same session again instead of refusing.
-		await expect(test1.manager.send("sa_child1", "continue")).resolves.toMatchObject({
-			safeToRetry: true,
-		});
-		expect(test1.openPanel).toHaveBeenCalledTimes(2);
+		expect(test1.openPanel).toHaveBeenCalledTimes(1);
 	});
 
 	test("discards an automatic report if a new turn starts during transcript inspection", async () => {
