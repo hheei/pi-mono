@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-apply-patch",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"description": "V4A apply_patch editing tool with worker matching and per-path publishing.",
 	"type": "module",
 	"main": "dist/index.js",

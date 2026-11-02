@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-ext-addon",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"description": "Collection of opt-in host enhancement features for Pi.",
 	"type": "module",
 	"main": "dist/index.js",

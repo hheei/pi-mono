@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-ext-tools",
-	"version": "0.7.0",
+	"version": "0.7.1",
 	"description": "Pi file tools, foreground Bash, and package-owned tool search.",
 	"type": "module",
 	"main": "dist/index.js",
