@@ -35,8 +35,6 @@ function summarize(a: number, d: number): string {
 
 const WRITE_RENDER_DETAILS = "__piExtToolsWrite";
 const WRITE_VIEW_KEY = "__piExtToolsWriteView";
-const _NEW_FILE_PREVIEW_LINES = 20;
-const _EXPAND_HINT = "ctrl+o to expand";
 
 function createExecutionTool<TParams extends TypeBoxSchema, TDetails, TState>(
 	factory: (cwd: string) => ToolDefinition<TParams, TDetails, TState>,

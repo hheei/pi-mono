@@ -53,6 +53,7 @@ function rendered(result: AgentToolResult<unknown>, expanded = false): string {
 	const component = renderGrepResult(result, { expanded, isPartial: false }, plainTheme, {
 		isError: false,
 		lastComponent: undefined,
+		keyText: () => "ctrl+o",
 	});
 	return stripTerminalSequences(component.render(80).join("\n"));
 }
@@ -102,11 +103,40 @@ describe("search-renderer", () => {
 			renderFindResult(result, { expanded: true, isPartial: false }, plainTheme, {
 				isError: false,
 				lastComponent: undefined,
+				keyText: () => "ctrl+o",
 			})
 				.render(80)
 				.join("\n"),
 		);
 
 		expect(output).toContain("src/tools/");
+	});
+
+	it("prints the host's configured expand key in the find omission hint", () => {
+		const candidates = Array.from({ length: 30 }, (_, index) => ({
+			path: `src/dir-${index}/file.ts`,
+			matchType: "exact",
+		}));
+		const result: AgentToolResult<unknown> = {
+			content: [{ type: "text", text: `${candidates.length} files found` }],
+			details: {
+				format: "canonical-find",
+				candidates,
+				totalMatched: candidates.length,
+				totalFiles: candidates.length,
+			},
+		};
+
+		const output = stripTerminalSequences(
+			renderFindResult(result, { expanded: false, isPartial: false }, plainTheme, {
+				isError: false,
+				lastComponent: undefined,
+				keyText: () => "ctrl+x",
+			})
+				.render(80)
+				.join("\n"),
+		);
+
+		expect(output).toContain("ctrl+x to expand");
 	});
 });

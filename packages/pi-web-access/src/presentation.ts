@@ -21,9 +21,10 @@ export function createWebToolRenderers(
 function extractErrorOutput(
 	details: Record<string, unknown> | undefined,
 	fallback: string,
+	expandKey: string,
 ): string {
 	if (details) {
-		const plan = buildSearchErrorPlan(details as SearchErrorDetails);
+		const plan = buildSearchErrorPlan(details as SearchErrorDetails, expandKey);
 		if (plan && plan.expanded.length > 0) {
 			const planText = plan.expanded.join("\n");
 			if (fallback && fallback !== planText && !planText.includes(fallback)) {
@@ -79,7 +80,11 @@ export const createWebSearchPresentation: ToolPresentationProvider = (
 	const resultText = agentResultText(result);
 
 	if (isError) {
-		const errorOutput = extractErrorOutput(details, resultText);
+		const errorOutput = extractErrorOutput(
+			details,
+			resultText,
+			context.keyText("app.tools.expand"),
+		);
 		let errorSummary = "search failed";
 		if (typeof details?.error === "string") {
 			errorSummary = details.error;
@@ -176,7 +181,11 @@ export const createFetchContentPresentation: ToolPresentationProvider = (
 	const resultText = agentResultText(result);
 
 	if (isError) {
-		const errorOutput = extractErrorOutput(details, resultText);
+		const errorOutput = extractErrorOutput(
+			details,
+			resultText,
+			context.keyText("app.tools.expand"),
+		);
 		const errorSummary = typeof details?.error === "string" ? details.error : "fetch failed";
 		return {
 			summary: errorSummary,
@@ -250,7 +259,11 @@ export const createGetSearchContentPresentation: ToolPresentationProvider = (
 	const resultText = agentResultText(result);
 
 	if (isError) {
-		const errorOutput = extractErrorOutput(details, resultText);
+		const errorOutput = extractErrorOutput(
+			details,
+			resultText,
+			context.keyText("app.tools.expand"),
+		);
 		const errorSummary = typeof details?.error === "string" ? details.error : "retrieval failed";
 		return {
 			summary: errorSummary,
@@ -308,7 +321,11 @@ export const createSourceCheckPresentation: ToolPresentationProvider = (
 	const resultText = agentResultText(result);
 
 	if (isError) {
-		const errorOutput = extractErrorOutput(details, resultText);
+		const errorOutput = extractErrorOutput(
+			details,
+			resultText,
+			context.keyText("app.tools.expand"),
+		);
 		const errorSummary = typeof details?.error === "string" ? details.error : "check failed";
 		return {
 			summary: errorSummary,

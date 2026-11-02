@@ -5,6 +5,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
+	type Keybinding,
 	stripTerminalSequences,
 	Text,
 	truncateToWidth,
@@ -41,8 +42,11 @@ export type FindToolDetails = {
 	readonly path?: string;
 };
 
-type RenderContext = { readonly isError: boolean; readonly lastComponent: Component | undefined };
-const EXPAND_HINT = "ctrl+o to expand";
+type RenderContext = {
+	readonly isError: boolean;
+	readonly lastComponent: Component | undefined;
+	readonly keyText: (keybinding: Keybinding) => string;
+};
 const TRUNCATION_MARKER = "…";
 const FIND_CURSOR = /^cursor:\s+/;
 const EMPTY_FIND_BODY = /^(?:No files found matching pattern)?$/;
@@ -350,12 +354,6 @@ function renderFindBody(lines: readonly FindBodyLine[], theme: Theme): string[] 
 	return lines.map((line) => theme.fg(line.kind === "omission" ? "dim" : "text", line.text));
 }
 
-export function formatFindModelOutput(details: FindToolDetails): string {
-	return findBodyLines(details)
-		.map((line) => line.text)
-		.join("\n");
-}
-
 export function renderFindResult(
 	result: AgentToolResult<unknown>,
 	options: ToolRenderResultOptions,
@@ -382,7 +380,7 @@ export function renderFindResult(
 	if (!options.expanded && body.length > visible.length)
 		visible.push({
 			kind: "omission",
-			text: `… (${body.length - visible.length} more lines, ${EXPAND_HINT})`,
+			text: `… (${body.length - visible.length} more lines, ${context.keyText("app.tools.expand")} to expand)`,
 		});
 	const component = new GrepResultComponent(theme);
 	component.set(renderFindBody(visible, theme), theme);

@@ -10,7 +10,12 @@ import {
 	type ToolLoadout,
 	type ToolLoadoutChanges,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, stripTerminalSequences, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+	type Component,
+	type Keybinding,
+	stripTerminalSequences,
+	truncateToWidth,
+} from "@earendil-works/pi-tui";
 import {
 	agentResultText,
 	BashOutputSink,
@@ -231,6 +236,8 @@ class BashOutputBody implements Component {
 		private readonly totalLines: number,
 		private readonly isError: boolean,
 		private readonly durationMs: number | undefined,
+		/** The host's configured expand key plus our label, so a remap stays accurate. */
+		private readonly expandHint: string,
 	) {}
 
 	render(width: number): string[] {
@@ -255,7 +262,7 @@ class BashOutputBody implements Component {
 			needsHint && body.length > 0
 				? [
 						truncateToWidth(
-							this.theme.fg("dim", `… (${hidden} earlier lines, ctrl+o to expand)`),
+							this.theme.fg("dim", `… (${hidden} earlier lines, ${this.expandHint})`),
 							available,
 							truncation,
 						),
@@ -411,7 +418,10 @@ export function registerBashTool(pi: ExtensionAPI, options?: BashToolOptions): T
 				result: AgentToolResult<unknown>,
 				renderOptions: { readonly expanded: boolean; readonly isPartial: boolean },
 				theme: Theme,
-				context: { readonly durationMs?: number | undefined },
+				context: {
+					readonly durationMs?: number | undefined;
+					readonly keyText: (keybinding: Keybinding) => string;
+				},
 			) {
 				const output = agentResultText(result);
 				return new BashOutputBody(
@@ -421,6 +431,7 @@ export function registerBashTool(pi: ExtensionAPI, options?: BashToolOptions): T
 					outputTotalLines(result, output),
 					result.isError === true,
 					context.durationMs,
+					`${context.keyText("app.tools.expand")} to expand`,
 				);
 			},
 		}),

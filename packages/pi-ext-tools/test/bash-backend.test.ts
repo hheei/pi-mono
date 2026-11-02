@@ -35,6 +35,7 @@ function bashContext(
 		isPartial,
 		lastComponent: undefined,
 		state: {},
+		keyText: () => "ctrl+o",
 		...extra,
 	} as never;
 }

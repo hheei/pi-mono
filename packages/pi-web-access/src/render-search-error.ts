@@ -13,7 +13,7 @@
  * applies theme colors + creates Text/Box components.
  *
  * Contract for callers:
- *   const plan = buildSearchErrorPlan(details);
+ *   const plan = buildSearchErrorPlan(details, context.keyText("app.tools.expand"));
  *   if (plan === null) ... // not an error/cancel result; use the normal renderer
  *   // collapsed: [statusLine, ...plan.collapsed, plan.expandHint].filter(Boolean)
  *   // expanded:  plan.expanded
@@ -63,6 +63,8 @@ function truncate(text: string, max: number): string {
  */
 export function buildSearchErrorPlan(
 	details: SearchErrorDetails | undefined | null,
+	/** The host's configured expand key, so a remap keeps the hint accurate. */
+	expandKey: string,
 ): SearchErrorPlan | null {
 	if (!details || (!details.error && !details.cancelled)) {
 		return null;
@@ -169,7 +171,7 @@ export function buildSearchErrorPlan(
 	const hiddenLines = Math.max(0, expanded.length - (1 + collapsed.length)); // headline + preview shown when collapsed
 	const expandHint =
 		hiddenLines > 0
-			? `... (${hiddenLines} more lines, ${expanded.length} total, ctrl+o to expand)`
+			? `... (${hiddenLines} more lines, ${expanded.length} total, ${expandKey} to expand)`
 			: null;
 
 	return { expanded, collapsed, expandHint };
