@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-ask-user",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Interactive ask_user tool for pi-coding-agent: one question or 2-4 in one prompt, multiple choice, multi-select, and freeform answers.",
 	"type": "module",
 	"main": "dist/index.js",
