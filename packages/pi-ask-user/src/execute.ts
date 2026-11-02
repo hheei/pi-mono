@@ -6,11 +6,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { AskComponent } from "./ask-prompt";
 import { BatchAskComponent } from "./batch-prompt";
-import { type CustomPromptRequest, runCustomPrompt, whileBlocked } from "./custom-prompt";
+import { type CustomPromptRequest, runCustomPrompt } from "./custom-prompt";
 import { askBatchViaDialogs, askText, askViaDialogs } from "./dialogs";
 import { type AskEventSubject, createAskEventEmitter } from "./events";
 import { formatBatchAnswers, formatBatchForMessage, formatSingleForMessage } from "./format";
-import { type PromptSettings, resolvePromptSettings } from "./preferences";
 import {
 	type AskBatchDetails,
 	type AskResponse,
@@ -47,7 +46,6 @@ async function askForText(
 }
 
 interface InteractivePrompt<T> {
-	settings: PromptSettings;
 	signal: AbortSignal | undefined;
 	timeout: number | undefined;
 	/** Absent when the host's own dialog answers instead of a custom surface. */
@@ -61,16 +59,13 @@ async function runInteractive<T>(
 	ctx: ExtensionContext,
 	request: InteractivePrompt<T>,
 ): Promise<T | null> {
-	const { settings, createComponent } = request;
-	return await whileBlocked(pi, () =>
-		runCustomPrompt<T>(pi, ctx, {
-			signal: request.signal,
-			timeout: request.timeout,
-			displayMode: settings.displayMode,
-			...(createComponent === undefined ? {} : { createComponent }),
-			fallback: request.fallback,
-		}),
-	);
+	const { createComponent } = request;
+	return await runCustomPrompt<T>(pi, ctx, {
+		signal: request.signal,
+		timeout: request.timeout,
+		...(createComponent === undefined ? {} : { createComponent }),
+		fallback: request.fallback,
+	});
 }
 
 export async function executeSingle(
@@ -94,7 +89,6 @@ export async function executeSingle(
 		};
 	}
 
-	const settings = await resolvePromptSettings(params, signal);
 	const context = params.context?.trim() || undefined;
 	const rawOptions = params.options ?? [];
 	const options = coerceOptions(rawOptions);
@@ -131,14 +125,13 @@ export async function executeSingle(
 	}
 
 	const response = await runInteractive<AskResponse>(pi, ctx, {
-		settings,
 		signal,
 		timeout: params.timeout_ms,
 		createComponent:
 			options.length === 0
 				? undefined
 				: (tui, theme, keybindings, complete) =>
-						new AskComponent(prompt, settings, tui, theme, keybindings, complete),
+						new AskComponent(prompt, tui, theme, keybindings, complete),
 		fallback: (fallbackSignal, deadline) =>
 			options.length === 0
 				? askForText(ctx, question, context, fallbackSignal, deadline)
@@ -199,7 +192,6 @@ export async function executeBatch(
 		};
 	}
 
-	const settings = await resolvePromptSettings(params, signal);
 	const events = createAskEventEmitter(pi);
 
 	if (!ctx.hasUI || !ctx.ui) {
@@ -212,11 +204,10 @@ export async function executeBatch(
 	});
 
 	const answers = await runInteractive<BatchAnswer[]>(pi, ctx, {
-		settings,
 		signal,
 		timeout: params.timeout_ms,
 		createComponent: (tui, theme, keybindings, complete) =>
-			new BatchAskComponent(questions, settings, tui, theme, keybindings, complete, heading),
+			new BatchAskComponent(questions, tui, theme, keybindings, complete, heading),
 		fallback: (fallbackSignal, deadline) =>
 			askBatchViaDialogs(ctx.ui, questions, fallbackSignal, deadline, heading),
 	});

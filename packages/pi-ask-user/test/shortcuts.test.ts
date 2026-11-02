@@ -1,6 +1,6 @@
 import type { KeybindingsManager } from "@earendil-works/pi-tui";
 import { describe, expect, test } from "vitest";
-import { digitKey, matchesSelectDown, matchesSelectUp, pageDelta } from "../src/shortcuts";
+import { digitKey, matchesSelectDown, matchesSelectUp } from "../src/shortcuts";
 
 /** Only the binding lookup matters here; key sequences are matched by pi-tui itself. */
 const bindings = (...accepted: string[]): KeybindingsManager =>
@@ -20,14 +20,6 @@ describe("select navigation", () => {
 		expect(matchesSelectDown("\t", bindings())).toBe(true);
 		expect(matchesSelectUp("\u000b", bindings())).toBe(false);
 		expect(matchesSelectDown("\n", bindings())).toBe(false);
-	});
-});
-
-describe("pageDelta", () => {
-	test("moves by a viewport on page keys only", () => {
-		expect(pageDelta("\u001b[5~", 4)).toBe(-4);
-		expect(pageDelta("\u001b[6~", 4)).toBe(4);
-		expect(pageDelta("\u001b[B", 4)).toBe(0);
 	});
 });
 

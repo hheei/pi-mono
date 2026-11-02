@@ -54,7 +54,6 @@ Call `ask_user` with one decision at a time:
 - `options`: 2-5 clear choices when possible
 - `allowMultiple`: `false` unless independent selections are genuinely needed
 - `allowFreeform`: usually `true`
-- `displayMode` *(optional)*: `"overlay"` (default) or `"inline"`. Use `"inline"` when preceding assistant context (summary, trade-offs, recommendation) is essential to the decision and should remain visible — overlays cover the conversation underneath. The user may set a personal default via `displayMode` in the `askUser` section of `ext_settings.json`; only pass this when you intentionally want to override it for one call.
 - `timeout_ms` *(optional)*: auto-dismiss after N milliseconds; the result comes back cancelled. Omit unless the decision is genuinely time-boxed.
 
 When 2-4 decisions at the same boundary are independent of each other and their prerequisites are settled, you may ask them together with `questions` instead of `question`. Each entry carries its own `question`, `context`, `options`, `allowMultiple`, and `allowFreeform`. A top-level `question` sent with `questions` is only a heading, never asked. Never batch a decision whose options depend on another answer; ask it in a later call once that answer is known.

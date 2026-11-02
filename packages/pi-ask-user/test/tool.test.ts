@@ -1,11 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import {
-	customUI,
-	emittedEvents,
-	isolateAgentDir,
-	rejectedError,
-	setupTool,
-} from "./fixtures/harness";
+import { customUI, isolateAgentDir, rejectedError, setupTool } from "./fixtures/harness";
 
 vi.mock("@earendil-works/pi-coding-agent", async () =>
 	(await import("./fixtures/fake-host")).piCodingAgentModule(),
@@ -21,8 +15,9 @@ describe("ask_user", () => {
 		expect(tool.executionMode).toBe("sequential");
 	});
 
-	test("emits Herdr blocked lifecycle while awaiting a structured answer", async () => {
+	test("reports blocked program status while the custom prompt owns the surface", async () => {
 		const tool = await setupTool();
+		let blocked: unknown;
 
 		await tool.execute(
 			"tool-call-id",
@@ -32,32 +27,33 @@ describe("ask_user", () => {
 			{
 				hasUI: true,
 				mode: "tui",
-				ui: { custom: customUI(async () => ({ kind: "selection", selections: ["Yes"] })) },
+				ui: {
+					custom: customUI(async (_factory, options) => {
+						blocked = options.blocked;
+						return { kind: "selection", selections: ["Yes"] };
+					}),
+				},
 			},
 		);
 
-		expect(emittedEvents.filter((event) => event.name === "herdr:blocked")).toEqual([
-			{ name: "herdr:blocked", payload: { active: true, label: "Waiting for user response" } },
-			{ name: "herdr:blocked", payload: { active: false } },
-		]);
+		expect(blocked).toEqual({ kind: "question", message: "Waiting for user response" });
 	});
 
-	test("emits Herdr blocked lifecycle while awaiting a freeform answer", async () => {
+	test("answers a freeform question through the host dialog", async () => {
 		const tool = await setupTool();
 
-		await tool.execute("tool-call-id", { question: "Why?", options: [] }, undefined, undefined, {
-			hasUI: true,
-			mode: "tui",
-			ui: { input: async () => "Because" },
-		});
+		const result = await tool.execute(
+			"tool-call-id",
+			{ question: "Why?", options: [] },
+			undefined,
+			undefined,
+			{ hasUI: true, mode: "tui", ui: { input: async () => "Because" } },
+		);
 
-		expect(emittedEvents.filter((event) => event.name === "herdr:blocked")).toEqual([
-			{ name: "herdr:blocked", payload: { active: true, label: "Waiting for user response" } },
-			{ name: "herdr:blocked", payload: { active: false } },
-		]);
+		expect(result.content).toEqual([{ type: "text", text: "User answered: Because" }]);
 	});
 
-	test("throws and clears Herdr blocked lifecycle when structured UI rejects", async () => {
+	test("throws when structured UI rejects", async () => {
 		const tool = await setupTool();
 
 		const error = await rejectedError(
@@ -79,10 +75,6 @@ describe("ask_user", () => {
 		);
 
 		expect(error.message).toBe("UI failed");
-		expect(emittedEvents.filter((event) => event.name === "herdr:blocked")).toEqual([
-			{ name: "herdr:blocked", payload: { active: true, label: "Waiting for user response" } },
-			{ name: "herdr:blocked", payload: { active: false } },
-		]);
 	});
 
 	test("throws when interactive UI is unavailable", async () => {
@@ -104,7 +96,7 @@ describe("ask_user", () => {
 		expect(error.message).toContain("2. No");
 	});
 
-	test("clears Herdr blocked lifecycle when freeform input is cancelled", async () => {
+	test("cancels when freeform input is dismissed", async () => {
 		const tool = await setupTool();
 
 		const result = await tool.execute(
@@ -116,10 +108,6 @@ describe("ask_user", () => {
 		);
 
 		expect(result.details.cancelled).toBe(true);
-		expect(emittedEvents.filter((event) => event.name === "herdr:blocked")).toEqual([
-			{ name: "herdr:blocked", payload: { active: true, label: "Waiting for user response" } },
-			{ name: "herdr:blocked", payload: { active: false } },
-		]);
 	});
 });
 

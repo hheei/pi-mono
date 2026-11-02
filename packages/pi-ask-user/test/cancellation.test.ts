@@ -289,9 +289,6 @@ describe("cancellation correctness", () => {
 			expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
 			expect(vi.getTimerCount()).toBe(0);
 			expect(completions).toBeLessThanOrEqual(1);
-			expect(
-				emittedEvents.filter((event) => event.name === "herdr:blocked").at(-1)?.payload,
-			).toEqual({ active: false });
 		});
 	}
 });

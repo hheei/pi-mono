@@ -1,13 +1,8 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import { isRecord } from "@hheei/pi-ext-core";
 import { BATCH_MAX_QUESTIONS, BATCH_MIN_QUESTIONS } from "./constants";
 import type { QuestionOption } from "./single-select-layout";
 
-export { StringEnum };
-
 type AskOptionInput = QuestionOption | string;
-
-export type AskDisplayMode = "overlay" | "inline";
 
 interface BatchQuestionInput {
 	question: string;
@@ -24,7 +19,6 @@ export interface AskParams {
 	options?: AskOptionInput[];
 	allowMultiple?: boolean;
 	allowFreeform?: boolean;
-	displayMode?: AskDisplayMode;
 	timeout_ms?: number;
 }
 

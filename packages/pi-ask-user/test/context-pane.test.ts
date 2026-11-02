@@ -14,65 +14,15 @@ const longContext = "Context detail. ".repeat(80);
 const questionLines = (count: number) =>
 	Array.from({ length: count }, (_, index) => `Question line ${index}`).join("\n");
 
-test("scrolls the prompt pane without hiding answers or help", async () => {
-	const context = Array.from({ length: 8 }, (_, index) => `Context line ${index}`).join("\n");
-	const { frameOf, result } = await runPrompt(
-		{ question: questionLines(18), context, options: ["Alpha", "Beta"] },
-		(component, record) => {
-			record("initial");
-			press(component, "ctrl+e");
-			record("expanded");
-			press(component, "end");
-			record("scrolled");
-			press(component, "home");
-			record("restored");
-		},
-		{ rows: 12 },
-	);
-
-	expect(result.isError).not.toBe(true);
-	expect(frameOf("initial")).toContain("Question line 0");
-	expect(frameOf("scrolled")).toContain("Context line 7");
-	expect(frameOf("scrolled")).toContain("Alpha");
-	expect(frameOf("scrolled")).toContain("ctrl+e context");
-	expect(frameOf("scrolled")).toContain("PgUp/P");
-	expect(frameOf("restored")).toContain("Question line 0");
-});
-
-test("keeps multiple freeform editor rows visible in a constrained overlay", async () => {
-	const { frameOf, rowsOf, result } = await runPrompt(
-		{
-			question: "Which option should we use?",
-			context: "Short context that should give way to the editor once freeform mode is active.",
-			options: ["Alpha", "Beta"],
-		},
-		(component, record) => {
-			press(component, "down", "down", "enter");
-			editorState.text = Array.from({ length: 6 }, (_, index) => `editor line ${index}`).join("\n");
-			record("frame");
-		},
-		{ rows: 12 },
-	);
-
-	const joined = frameOf("frame");
-	expect(result.isError).not.toBe(true);
-	expect(rowsOf("frame").length).toBeLessThanOrEqual(10);
-	expect(joined).toContain("Custom response");
-	expect(joined).toContain("editor line 4");
-	expect(joined).toContain("editor line 5");
-	expect(joined).toContain("\u21b5 submit");
-});
-
-test("routes PageUp/PageDown to the editor in freeform mode instead of prompt scrolling", async () => {
+test("routes PageUp/PageDown to the editor in freeform mode", async () => {
 	editorState.inputs = [];
 	const { result } = await runPrompt(
 		{
 			question: questionLines(18),
-			context: "Long overlay context so the prompt pane has scrollable overflow.",
+			context: "Long context so the prompt is taller than the terminal.",
 			options: ["Alpha", "Beta"],
 		},
 		(component) => {
-			// Render once so the prompt pane computes a scrollable overflow, then open the editor.
 			component.render(50);
 			press(component, "down", "down", "enter");
 			component.render(50);
@@ -86,13 +36,12 @@ test("routes PageUp/PageDown to the editor in freeform mode instead of prompt sc
 	expect(editorState.inputs).toContain("pageDown");
 });
 
-test("does not apply overlay viewport clipping in inline mode", async () => {
+test("does not clip a tall prompt to a viewport", async () => {
 	const { rowsOf } = await runPrompt(
 		{
 			question: "This is a very long question. ".repeat(80),
 			context: longContext,
 			options: ["Alpha", "Beta"],
-			displayMode: "inline",
 		},
 		(_component, record) => record("frame"),
 		{ rows: 12 },
@@ -101,10 +50,10 @@ test("does not apply overlay viewport clipping in inline mode", async () => {
 	expect(rowsOf("frame").length).toBeGreaterThan(10);
 });
 
-test("collapses oversized inline context but leaves short context expanded", async () => {
+test("collapses oversized context but leaves short context expanded", async () => {
 	const renderInline = async (context: string) => {
 		const { frameOf } = await runPrompt(
-			{ question: "Pick one", context, options: ["Alpha", "Beta"], displayMode: "inline" },
+			{ question: "Pick one", context, options: ["Alpha", "Beta"] },
 			(_component, record) => record("frame"),
 			{ rows: 12, width: 40 },
 		);
@@ -119,12 +68,12 @@ test("collapses oversized inline context but leaves short context expanded", asy
 	expect(longOutput).not.toContain("Long context detail.");
 });
 
-test("toggles inline context open and closed", async () => {
+test("toggles context open and closed", async () => {
 	const context = Array.from({ length: 6 }, (_, index) => `Medium context line ${index}`).join(
 		"\n",
 	);
 	const { frameOf } = await runPrompt(
-		{ question: "Pick one", context, options: ["Alpha", "Beta"], displayMode: "inline" },
+		{ question: "Pick one", context, options: ["Alpha", "Beta"] },
 		(component, record) => {
 			record("initial");
 			press(component, "ctrl+e");
@@ -150,8 +99,6 @@ describe("context pane", () => {
 				record("collapsed");
 				press(component, "ctrl+e");
 				record("expanded");
-				press(component, "end");
-				record("scrolled");
 				press(component, "ctrl+e");
 				record("recollapsed");
 				press(component, "enter");
@@ -160,9 +107,8 @@ describe("context pane", () => {
 		);
 
 		expect(frameOf("collapsed")).toContain("Context (");
-		expect(frameOf("expanded")).not.toContain("Context detail.");
-		expect(frameOf("scrolled")).toContain("Context detail.");
-		expect(frameOf("scrolled")).toContain("Beta");
+		expect(frameOf("expanded")).toContain("Context detail.");
+		expect(frameOf("recollapsed")).toContain("Context (");
 		expect(frameOf("recollapsed")).not.toContain("Context detail.");
 		expect(result.details.response).toEqual({ kind: "selection", selections: ["Beta"] });
 		expect(result.details.context).toContain("Context detail.");

@@ -1,7 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Keybinding, KeybindingsManager } from "@earendil-works/pi-tui";
 import type { AskMode } from "./constants";
-import type { AskDisplayMode } from "./schema";
 
 /** Keys that render as one glyph so the whole hint row still fits a terminal row. */
 const KEY_GLYPH: Record<string, string> = {
@@ -20,13 +19,10 @@ export function formatKeyList(keys: readonly string[]): string {
 export interface HelpHintInput {
 	theme: Theme;
 	mode: AskMode;
-	displayMode: AskDisplayMode;
 	allowMultiple: boolean;
 	hasOptions: boolean;
 	contextCollapsible: boolean;
 	contextToggleKey: string;
-	/** True when the prompt pane clipped, so the scroll keys are worth showing. */
-	promptScrollable: boolean;
 	keybindings: KeybindingsManager;
 }
 
@@ -56,7 +52,6 @@ export function buildHelpText(input: HelpHintInput): string {
 						: [binding("tui.select.confirm"), "select"],
 					input.allowMultiple ? ["␣", "toggle"] : null,
 					input.contextCollapsible ? [input.contextToggleKey, "context"] : null,
-					input.promptScrollable ? ["PgUp/PgDn", "prompt"] : null,
 					[binding("tui.select.cancel"), "cancel"],
 				]
 			: [

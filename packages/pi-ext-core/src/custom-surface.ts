@@ -4,7 +4,13 @@ import type {
 	KeybindingsManager,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
+import type {
+	Component,
+	OverlayHandle,
+	OverlayOptions,
+	ProgramStatus,
+	TUI,
+} from "@earendil-works/pi-tui";
 import { getGlobalState } from "./global-state.js";
 import { runtimeIdentity } from "./runtime-identity.js";
 
@@ -41,6 +47,11 @@ export interface OpenTuiSurfaceOptions<T> {
 	readonly overlay?: boolean;
 	readonly overlayOptions?: OverlayOptions | (() => OverlayOptions);
 	readonly onHandle?: (handle: OverlayHandle) => void;
+	/** What the user is expected to provide. The host reports it for inline surfaces only. */
+	readonly blocked?: {
+		readonly kind: NonNullable<ProgramStatus["kind"]>;
+		readonly message: string;
+	};
 	/**
 	 * Runs once after host settlement and hidden operations finish, before the
 	 * arbiter releases this surface slot. A failure rejects the returned Promise.
@@ -198,6 +209,7 @@ export function openTuiSurface<T>(
 					...(options.overlayOptions === undefined
 						? {}
 						: { overlayOptions: options.overlayOptions }),
+					...(options.blocked === undefined ? {} : { blocked: options.blocked }),
 					...(options.overlay === true || options.onHandle !== undefined
 						? {
 								onHandle: (handle: OverlayHandle): void => {

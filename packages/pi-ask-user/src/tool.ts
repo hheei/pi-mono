@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import { BATCH_MAX_QUESTIONS, BATCH_MIN_QUESTIONS } from "./constants";
 import { executeBatch, executeSingle } from "./execute";
 import { createAskUserRenderers } from "./presentation";
-import { type AskParams, StringEnum } from "./schema";
+import type { AskParams } from "./schema";
 
 const ASK_DESCRIPTION =
 	"Ask the user a question with optional multiple-choice answers, or 2-4 independent questions in one prompt. The turn blocks until the user answers.";
@@ -27,8 +27,6 @@ const ASK_PARAMETER_DESCRIPTIONS = {
 	options: "Options for the user to choose from",
 	allowMultiple: "Allow selecting multiple options (default: false)",
 	allowFreeform: "Add a freeform text option (default: true)",
-	displayMode:
-		"'overlay' shows a centered modal, 'inline' renders in place (default: displayMode in the askUser section of ext_settings.json, otherwise 'overlay')",
 	timeoutMs: "Auto-dismiss after N milliseconds; the result is cancelled",
 } as const;
 
@@ -88,11 +86,6 @@ export function registerAskUserTool(pi: ExtensionAPI) {
 			),
 			allowFreeform: Type.Optional(
 				Type.Boolean({ description: ASK_PARAMETER_DESCRIPTIONS.allowFreeform }),
-			),
-			displayMode: Type.Optional(
-				StringEnum(["overlay", "inline"] as const, {
-					description: ASK_PARAMETER_DESCRIPTIONS.displayMode,
-				}),
 			),
 			timeout_ms: Type.Optional(
 				Type.Integer({

@@ -252,8 +252,6 @@ test("records each page's answer and publishes nothing until the review page sub
 		},
 	]);
 	expect(emittedEvents).toEqual([
-		{ name: "herdr:blocked", payload: { active: true, label: "Waiting for user response" } },
-		{ name: "herdr:blocked", payload: { active: false } },
 		{
 			name: "ask:answered",
 			payload: {

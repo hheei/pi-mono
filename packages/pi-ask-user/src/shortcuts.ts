@@ -14,13 +14,6 @@ export function matchesSelectDown(data: string, keybindings: KeybindingsManager)
 	return keybindings.matches(data, "tui.select.down") || matchesKey(data, Key.tab);
 }
 
-/** PageUp/PageDown move by a viewport. The prompt pane owns these; lists own the arrows. */
-export function pageDelta(data: string, pageRows: number): number {
-	if (matchesKey(data, Key.pageUp)) return -pageRows;
-	if (matchesKey(data, Key.pageDown)) return pageRows;
-	return 0;
-}
-
 /** A 1-9 digit key, including the CSI-u form the kitty keyboard protocol sends. */
 export function digitKey(data: string): number | null {
 	const key = decodeKittyPrintable(data) ?? data;

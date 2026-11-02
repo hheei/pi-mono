@@ -56,7 +56,7 @@ describe("issue #51 event payload redaction", () => {
 	});
 });
 
-test("uses non-overlay custom UI when displayMode is inline", async () => {
+test("opens the prompt as an inline custom surface", async () => {
 	const tool = await setupTool();
 	let capturedOptions: any;
 
@@ -65,7 +65,6 @@ test("uses non-overlay custom UI when displayMode is inline", async () => {
 		{
 			question: "Which option should we use?",
 			options: ["A", "B"],
-			displayMode: "inline",
 		},
 		undefined,
 		undefined,
@@ -85,7 +84,7 @@ test("uses non-overlay custom UI when displayMode is inline", async () => {
 	expect(result.details.cancelled).toBe(true);
 });
 
-test("inline mode resolves with the user's selection", async () => {
+test("resolves with the user's selection", async () => {
 	const tool = await setupTool();
 
 	const result = await tool.execute(
@@ -93,7 +92,6 @@ test("inline mode resolves with the user's selection", async () => {
 		{
 			question: "Which option should we use?",
 			options: ["A", "B"],
-			displayMode: "inline",
 		},
 		undefined,
 		undefined,
@@ -119,7 +117,7 @@ test("inline mode resolves with the user's selection", async () => {
 	expect(result.details.response).toEqual({ kind: "selection", selections: ["A"] });
 });
 
-test("inline mode still respects timeout cancellation", async () => {
+test("still respects timeout cancellation", async () => {
 	const tool = await setupTool();
 
 	const result = await tool.execute(
@@ -127,7 +125,6 @@ test("inline mode still respects timeout cancellation", async () => {
 		{
 			question: "Which option should we use?",
 			options: ["A", "B"],
-			displayMode: "inline",
 			timeout_ms: 5,
 		},
 		undefined,

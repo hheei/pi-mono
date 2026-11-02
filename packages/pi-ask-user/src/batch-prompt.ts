@@ -10,9 +10,8 @@ import {
 } from "@earendil-works/pi-tui";
 import { AskComponent } from "./ask-prompt";
 import { INLINE_DOCK_RESERVED_ROWS } from "./constants";
-import type { PromptSettings } from "./preferences";
 import { formatKeyList } from "./prompt-help";
-import { getOverlayMaxRenderLinesForRows, railRow } from "./prompt-layout";
+import { getMaxRenderLinesForRows, railRow } from "./prompt-layout";
 import {
 	type AskResponse,
 	type AskUIResult,
@@ -37,7 +36,6 @@ export class BatchAskComponent implements Component {
 
 	constructor(
 		private questions: BatchQuestion[],
-		private settings: PromptSettings,
 		private tui: TUI,
 		private theme: Theme,
 		private keybindings: KeybindingsManager,
@@ -47,7 +45,7 @@ export class BatchAskComponent implements Component {
 		this.answers = questions.map(() => undefined);
 		this.pages = questions.map(
 			(entry, index) =>
-				new AskComponent(entry, settings, tui, theme, keybindings, (result) =>
+				new AskComponent(entry, tui, theme, keybindings, (result) =>
 					this.handlePageDone(index, result),
 				),
 		);
@@ -212,12 +210,11 @@ export class BatchAskComponent implements Component {
 	/** Rows the review page may use, rails included. */
 	private reviewLineCap(): number {
 		const rows = Number.isFinite(this.tui.terminal.rows) ? Math.floor(this.tui.terminal.rows) : 24;
-		const overlayCap = getOverlayMaxRenderLinesForRows(rows);
-		if (this.settings.displayMode === "overlay") return overlayCap;
 		// Inline prompts sit in Pi's fullscreen input dock, which clips anything
 		// taller than what remains after the transcript's minimum row, the
 		// working status, and the 2-3 row footer. Components only learn their
 		// width, so stay within that space instead of growing with the content.
-		return Math.max(4, Math.min(overlayCap, rows - INLINE_DOCK_RESERVED_ROWS));
+		const cap = getMaxRenderLinesForRows(rows);
+		return Math.max(4, Math.min(cap, rows - INLINE_DOCK_RESERVED_ROWS));
 	}
 }
