@@ -210,6 +210,9 @@ export class NestedCallsView implements Component, Collapsible {
 			lastComponent: undefined,
 			args: "args" in call ? (call as { args?: unknown }).args : undefined,
 			toolCallId,
+			// The container frame already indented these rows by the output pad; a child body that
+			// applied it again would count the same setting twice.
+			outputPad: 0,
 			durationMs: call.durationMs,
 			isError: Boolean(call.isError || ("status" in call && call.status === "error")),
 			isPartial: false,

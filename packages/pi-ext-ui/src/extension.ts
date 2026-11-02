@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	getRuntimeSettingsRegistry,
+	type MessageViewSpec,
 	messageViewPoint,
 	registerExtensionHook,
 	registerExtensionLifecycle,
@@ -29,6 +30,9 @@ export default function (pi: ExtensionAPI): void {
 			let patch:
 				| { dispose(): void; requestRender(): void; beginRun(): void; endRun(): void }
 				| undefined;
+			// The host owns this setting; a message view that draws its own shell applies the same
+			// value the host applies to its own rows, including the default when it is unset.
+			const outputPad = (): number => (context.pi.getSettings().outputPad === 0 ? 0 : 1);
 			const apply = (enabled: boolean): void => {
 				if (context.extension.mode !== "tui") return;
 				if (!enabled) {
@@ -39,7 +43,7 @@ export default function (pi: ExtensionAPI): void {
 				}
 				if (patch !== undefined) return;
 				try {
-					patch = installHostToolGroups(context.extension, () => runtime.backgrounds);
+					patch = installHostToolGroups(context.extension, () => runtime.backgrounds, outputPad);
 					redrawGroups = patch.requestRender;
 				} catch (error) {
 					context.extension.ui.notify(
@@ -92,7 +96,9 @@ export default function (pi: ExtensionAPI): void {
 				createOptionalToolRendererFactory(pi, runtime),
 			);
 			context.resources.add("tool-renderer", () => toolRenderers.dispose());
-			const handle = registerExtensionHook(context.pi, messageViewPoint, createMessageView);
+			const handle = registerExtensionHook(context.pi, messageViewPoint, (spec: MessageViewSpec) =>
+				createMessageView({ ...spec, outputPad: spec.outputPad ?? outputPad() }),
+			);
 			context.resources.add("message-view", () => handle.dispose());
 			try {
 				const state = await provider.storage.load({

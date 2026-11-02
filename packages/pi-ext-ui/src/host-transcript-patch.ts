@@ -180,13 +180,15 @@ function noticeMember(component: Component): Member | undefined {
  * semantic color. The group draws these rows once, so a plain notice has no expansion of its own.
  */
 class NotifyView implements Component {
-	readonly #text = new Text("", 1, 0);
+	readonly #text = new Text("", 0, 0);
 	readonly #ui: ExtensionUIContext;
+	readonly #outputPad: () => number;
 	readonly #message: string;
 	readonly #type: NoticeType;
 
-	constructor(message: string, type: NoticeType, ui: ExtensionUIContext) {
+	constructor(message: string, type: NoticeType, ui: ExtensionUIContext, outputPad: () => number) {
 		this.#ui = ui;
+		this.#outputPad = outputPad;
 		this.#message = message;
 		this.#type = type;
 	}
@@ -202,6 +204,8 @@ class NotifyView implements Component {
 
 	/** The notice body as it appears both in the transcript and inside the activity group. */
 	rows(width: number): string[] {
+		// The pad setting can change while a notice is on screen, so it is read per render.
+		this.#text.setPaddingX(this.#outputPad());
 		// info is the terminal's own readable text; a warning or error keeps its status token and
 		// its written prefix, so the level never depends on color alone.
 		this.#text.setText(
@@ -244,7 +248,12 @@ interface Attachment {
 	observe(): void;
 }
 
-function attach(host: Host, run: RunBox, background: () => boolean): Attachment {
+function attach(
+	host: Host,
+	run: RunBox,
+	background: () => boolean,
+	outputPad: () => number,
+): Attachment {
 	const chat = host.chat;
 	const original = {
 		render: chat.render,
@@ -457,7 +466,7 @@ function attach(host: Host, run: RunBox, background: () => boolean): Attachment 
 	return {
 		notify(message, type) {
 			if (!active) return false;
-			chat.addChild(new NotifyView(message, type, host.ui));
+			chat.addChild(new NotifyView(message, type, host.ui, outputPad));
 			host.requestRender();
 			return true;
 		},
@@ -600,6 +609,7 @@ function patchState(): PatchState {
 export function installHostToolGroups(
 	context: ExtensionContext,
 	background: () => boolean,
+	outputPad: () => number,
 ): {
 	dispose(): void;
 	requestRender(): void;
@@ -640,7 +650,7 @@ export function installHostToolGroups(
 		ui,
 		hosts: new Map(),
 		failed: new WeakSet(),
-		attach: (host) => attach(host, run, background),
+		attach: (host) => attach(host, run, background, outputPad),
 	};
 	state.owners.set(ui, owner);
 	// Reload rebuilds history before session_start; reconnect already discovered instances.

@@ -2,7 +2,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readMessageView } from "@hheei/pi-ext-core";
 import { expect, test } from "vitest";
 import extension from "../src/extension.js";
-import { createMessageView } from "../src/message-view.js";
 
 test("publishes the message view for one session", async () => {
 	const handlers = new Map<string, Array<(event: unknown, context: unknown) => Promise<void>>>();
@@ -19,6 +18,7 @@ test("publishes the message view for one session", async () => {
 			};
 		},
 		registerToolRenderer() {},
+		getSettings: () => ({}),
 	} as unknown as ExtensionAPI;
 	extension(pi);
 	expect(readMessageView(pi)).toBeUndefined();
@@ -34,7 +34,7 @@ test("publishes the message view for one session", async () => {
 			ui: { notify() {} },
 		},
 	);
-	expect(readMessageView(pi)).toBe(createMessageView);
+	expect(readMessageView(pi)).toBeTypeOf("function");
 	await stop({ type: "session_shutdown" }, {});
 	expect(readMessageView(pi)).toBeUndefined();
 });

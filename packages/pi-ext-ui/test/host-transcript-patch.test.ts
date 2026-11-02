@@ -133,7 +133,11 @@ function setup(connect = true, uiTheme: Theme = theme) {
 		handleMouse: chat.handleMouse,
 		invalidate: chat.invalidate,
 	};
-	const patch = installHostToolGroups(context, () => backgrounds);
+	const patch = installHostToolGroups(
+		context,
+		() => backgrounds,
+		() => 1,
+	);
 	cleanups.push(patch.dispose);
 	if (connect) lookup("fixture");
 	const notice = (message: string, type: "info" | "warning" | "error" = "info") =>
@@ -276,6 +280,8 @@ describe("tail total-height minimum", () => {
 		const f = setup();
 		f.begin();
 		const prefix = grouped ? [assistant(["a", "b"]), f.row("a"), f.row("b")] : [];
+		// A live row draws the shared spinner clock, so two renders a frame apart would differ.
+		const clock = vi.spyOn(performance, "now").mockReturnValue(0);
 		backgrounds = true;
 		try {
 			for (const width of [30, 120]) {
@@ -295,6 +301,7 @@ describe("tail total-height minimum", () => {
 				}
 			}
 		} finally {
+			clock.mockRestore();
 			backgrounds = false;
 		}
 	});
@@ -727,7 +734,11 @@ describe("two centralized host seams / original transcript projection", () => {
 			configurable: true,
 			writable: false,
 		});
-		const patch = installHostToolGroups(f.context, () => backgrounds);
+		const patch = installHostToolGroups(
+			f.context,
+			() => backgrounds,
+			() => 1,
+		);
 		cleanups.push(patch.dispose);
 		f.lookup("fixture");
 		expect(f.chat.render).toBe(f.originals.render);
@@ -1827,7 +1838,11 @@ describe("two centralized host seams / original transcript projection", () => {
 		expect(show(a.chat)).not.toContain("2 calls");
 		expect(show(b.chat)).toContain("2 calls");
 		b.patch.dispose();
-		const again = installHostToolGroups(a.context, () => backgrounds);
+		const again = installHostToolGroups(
+			a.context,
+			() => backgrounds,
+			() => 1,
+		);
 		cleanups.push(again.dispose);
 		again.beginRun();
 		expect(show(a.chat)).toContain("2 calls");
@@ -1854,7 +1869,11 @@ describe("two centralized host seams / original transcript projection", () => {
 			);
 		}
 		f.chat.children = [assistant(["a", "b"]), ...rows];
-		const patch = reinstall(f.context, () => backgrounds);
+		const patch = reinstall(
+			f.context,
+			() => backgrounds,
+			() => 1,
+		);
 		cleanups.push(patch.dispose);
 		patch.beginRun();
 		// No additional tool lookup: history was already rebuilt before session_start.

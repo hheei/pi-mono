@@ -574,6 +574,9 @@ function renderGenericResult(params: {
 				const upstreamContext: ToolRenderContext = {
 					...context,
 					lastComponent: lastUpstreamComponent,
+					// This frame indents the rows it embeds, so the renderer it wraps must not indent
+					// them again: the pad is applied once, by the outermost shell.
+					outputPad: 0,
 				};
 				const comp = originalRenderResult(result, effectiveOptions, theme, upstreamContext);
 				lastUpstreamComponent = comp;
