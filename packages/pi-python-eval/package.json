@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-python-eval",
-	"version": "0.7.0",
+	"version": "0.7.1",
 	"description": "Persistent session-scoped Python eval for Pi, with nested tool calls through the Pi host.",
 	"type": "module",
 	"main": "dist/index.js",
