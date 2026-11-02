@@ -1,0 +1,59 @@
+{
+	"name": "@hheei/pi-ask-user",
+	"version": "0.1.0",
+	"description": "Interactive ask_user tool for pi-coding-agent: one question or 2-4 in one prompt, multiple choice, multi-select, and freeform answers.",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": "./dist/index.js"
+	},
+	"files": [
+		"dist",
+		"skills",
+		"README.md",
+		"LICENSE"
+	],
+	"pi": {
+		"extensions": [
+			"dist/index.js"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
+	"scripts": {
+		"build": "node -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+		"prepack": "pnpm run build"
+	},
+	"keywords": [
+		"pi",
+		"pi-package",
+		"pi-extension",
+		"ask",
+		"ask_user",
+		"interactive"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/hheei/pi-mono.git",
+		"directory": "packages/pi-ask-user"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@earendil-works/pi-ai": "^1.4.0",
+		"@hheei/pi-ext-core": "workspace:^"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": ">=1.2.0",
+		"@earendil-works/pi-tui": ">=1.2.0",
+		"typebox": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "^1.4.0",
+		"@earendil-works/pi-tui": "^1.4.0"
+	}
+}
