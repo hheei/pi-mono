@@ -68,6 +68,8 @@ agents_delegate
 
 呈现方式在 spawn 时冻结并记录在 registry 的 `presentation` 字段；`agents_delegate` 不暴露该参数，默认在有 host 时用 panel、没有 host 时用后台，并且**在 spawn 结果里明说**用了哪一种以及 fallback 原因（不静默改变执行环境）。Task tool 同样采用这个 host 优先策略；Task 仍由 parent 收口并在提交最终结果后结束，panel 只是 child runtime 的可见呈现，不改变一次性 Task 合同。
 
+“有 host”由事实判定，不由环境变量判定：只有当宿主的 pane/surface 的前台进程是本进程或其祖先时，才认为该宿主可以承载面板；pane 自己的 shell 不算（它是空闲兜底，否则 `pi &` 也会认领这个 pane）；继承来的 `HERDR_ENV`/`HERDR_PANE_ID` 只用于候选排序。panel 打开失败且调用方未显式要求 `panel` 时，在同一 spawn 窗口内把记录改为 `background` 并在 spawn 结果里写明原因，child 照常运行——此时还没有任何 panel 呈现给用户，因此不违反“呈现方式冻结”。只有显式 `presentation: "panel"` 才以失败结束。宿主拒绝命令时，其错误码与消息必须进入调用方可见的原因（两个宿主都用 exit code 0 + JSON error 报告 API 失败）。
+
 panel child 的进程由 host 持有，parent 只持有 attachment：
 
 - spawn 时 parent 仍然铸造 runtime identity 并构造唯一的 LaunchSpec（`presentation=panel` 时不含 `--mode rpc`、stdio=inherit），再交给 HostAdapter 打开 panel 并运行该 argv；

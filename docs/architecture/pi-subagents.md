@@ -13,6 +13,20 @@ Ownership:
   `reportsFocus` capability). Not identity, and never a second Pi argv builder: the parent builds the
   LaunchSpec, the host only runs it and reports what it observes.
 
+Host attachment is decided by a fact, not by the environment. A pane is this process's pane only when
+the kernel says so: `herdr pane process-info` lists the pane's foreground processes, and the pane
+matches when one of them is this process or one of its ancestors. Ancestry is included because a
+wrapper (`pnpm exec`, a supervisor) runs this process as a child while the pane's foreground job is
+still the Pi above it. The pane's own shell is excluded: it is the idle fallback, so counting it would
+let `pi &` or anything else started from that terminal claim the pane. `HERDR_ENV`, `HERDR_PANE_ID`
+and `HERDR_WORKSPACE_ID` are inherited and outlive the pane that set them, so they only order the
+candidates; a pane still has to prove it runs this process. `herdr pane current --current` answers
+which pane a human is looking at and is therefore never used as identity. No match means no panel, and
+the child runs in the background.
+
+Both hosts report API rejections as JSON with exit code 0, so a host command is only successful when it
+exited zero and returned no error body; the error code and message belong in the reason the caller sees.
+
 ext-core no longer has an in-process subagent coordinator. This package owns child identity and lifecycle.
 
 Control is one sqlite file (`state.sqlite`): child rows are the ledger, command rows are the mailbox.
@@ -31,10 +45,15 @@ stdin pipe, so it ends with the parent process.
 
 There is no attach or detach: a child is presented where it was spawned and never switches
 afterwards. `agents_delegate` prefers a panel (a new Herdr tab or cmux surface
-running the child's own Pi TUI) targeting the parent's current workspace, and falls back to a headless
+running the child's own Pi TUI) targeting the workspace of the pane that runs this process, and falls back to a headless
 background process when this parent has no host. Panel launches pass Pi's `--approve` flag so project-file
 trust cannot interrupt startup. The presentation is frozen in the registry as `panel` | `background` (see
 [`spec.md`](../pi-subagents/spec.md) §2.2).
+
+A panel is an optimization and the child is not: when the panel cannot be opened and the caller did not
+ask for one by name, the record moves to `background` before any runtime exists and the child runs
+anyway, with the reason in the spawn result. Only an explicit `presentation: "panel"` request fails
+instead of degrading, because there the panel is what was asked for.
 Native `/resume` of the same session outside the managed path is not intercepted.
 
 系统确认成功的 idle 回收保留可恢复身份：后续 `agents_delegate` 使用同一 session。本进程看见自己的后台进程退出时记 `blocked` 并回报一次，不改成 stopped intent；进程锁只是空了的情况不写盘，读时投影成 `blocked`（唯一例外是 parent 启动：写者已经消失、无法自己回报的 child 由 `ready` 一次性落库并回报）；后续 `agents_delegate` 用同一 session 再起 runtime，调用方不要为此另建 agent。宿主已确认 panel 进程不在时关掉空标签；标签还在则留着，要收掉由调用方 `agents_stop`。只有本进程的进程句柄还活着时，send 才拒绝再起一个 runtime，并要求先 stop 这个 child。锁还被持有时输入交给当前写者，不另起一个。
