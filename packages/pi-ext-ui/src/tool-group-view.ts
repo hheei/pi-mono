@@ -256,6 +256,8 @@ export class ToolGroupView extends Container {
 	readonly #redraw: () => void;
 	/** Pi-native block backgrounds are opt-in; while they are on, the fill replaces the rails. */
 	readonly #background: () => boolean;
+	/** Pi's own output padding, so the frame lines up with the tool rows it wraps. */
+	readonly #outputPad: () => number;
 	/** The stable clock for this block; restored history stays unknown until live content joins. */
 	#clock: ToolGroupClock | undefined;
 	/** The block's own members, drawn inside the group. */
@@ -279,11 +281,17 @@ export class ToolGroupView extends Container {
 	readonly #box = new Box(0, 1);
 	readonly #spacer = new Spacer(1);
 
-	constructor(ui: ExtensionUIContext, redraw: () => void, background: () => boolean) {
+	constructor(
+		ui: ExtensionUIContext,
+		redraw: () => void,
+		background: () => boolean,
+		outputPad: () => number,
+	) {
 		super();
 		this.#ui = ui;
 		this.#redraw = redraw;
 		this.#background = background;
+		this.#outputPad = outputPad;
 		this.#heading = new MouseRegion(this.#header, (event) => {
 			if (event.type !== "click" || event.button !== "left") return undefined;
 			this.#toggleRaw();
@@ -496,8 +504,13 @@ export class ToolGroupView extends Container {
 		const theme = this.#ui.theme;
 		const lines: string[] = [];
 		const hits: Hit[] = [];
+		// The frame is the block's own row; a tool row inside it pads itself, so only these rows take
+		// Pi's output padding.
+		const pad = Math.max(0, this.#outputPad());
+		const lead = " ".repeat(pad);
+		const inner = Math.max(0, width - pad * 2);
 		const push = (row: string, action: Action = { kind: "none" }) => {
-			lines.push(fitRow(row, Math.max(0, width), "…"));
+			lines.push(fitRow(`${lead}${row}`, Math.max(0, width), "…"));
 			hits.push({ height: 1, action });
 		};
 		/** Rows that belong to one component keep one hit so its own geometry stays correct. */
@@ -510,7 +523,7 @@ export class ToolGroupView extends Container {
 		for (const [index, member] of this.#members.entries()) {
 			if (member.kind === "tool") tools.push(index);
 		}
-		push(theme.fg("borderMuted", "─".repeat(Math.max(0, width))));
+		push(theme.fg("borderMuted", "─".repeat(inner)));
 
 		const notices = this.#noticeItems();
 		if (notices.length > 0) {
@@ -524,7 +537,7 @@ export class ToolGroupView extends Container {
 				kind: "category",
 				category: "notices",
 			});
-			if (this.#category === "notices") this.#renderNotices(notices, width, push);
+			if (this.#category === "notices") this.#renderNotices(notices, inner, push);
 		}
 
 		const thinking = this.#thinkingItems();
@@ -539,7 +552,7 @@ export class ToolGroupView extends Container {
 					category: "thinking",
 				},
 			);
-			if (this.#category === "thinking") this.#renderThinking(thinking, width, push);
+			if (this.#category === "thinking") this.#renderThinking(thinking, inner, push);
 		}
 
 		// Names and header calls share one eligibility: only completed calls are counted. A tool that
@@ -574,7 +587,7 @@ export class ToolGroupView extends Container {
 		}
 
 		// The rails bracket the header, categories, and any opened detail; the footer sits below them.
-		push(theme.fg("borderMuted", "─".repeat(Math.max(0, width))));
+		push(theme.fg("borderMuted", "─".repeat(inner)));
 		// The footer is always the block's request and token totals: one row, never a tool status.
 		push(this.#footerRow());
 		this.#hits = hits;
@@ -832,10 +845,11 @@ export class ToolGroupView extends Container {
 			theme.fg("dim", elapsed),
 			theme.fg("dim", `${calls} ${calls === 1 ? "call" : "calls"}`),
 		].join(theme.fg("dim", " · "));
+		const pad = Math.max(0, this.#outputPad());
 		this.#header.setText(
 			fitRow(
-				`${theme.fg("dim", this.#renderedExpanded ? "▾" : "▸")} ${details}`,
-				Math.max(0, width),
+				`${" ".repeat(pad)}${theme.fg("dim", this.#renderedExpanded ? "▾" : "▸")} ${details}`,
+				Math.max(0, width - pad * 2),
 				"…",
 			),
 		);

@@ -144,6 +144,7 @@ describe("ToolGroupView lifetime", () => {
 			ui(),
 			() => undefined,
 			() => false,
+			() => 0,
 		);
 		const component = { render: () => [], invalidate() {} };
 		const notice = (rows: string[]): Member => ({ kind: "notice", component, content: () => rows });
@@ -174,7 +175,12 @@ describe("ToolGroupView lifetime", () => {
 	test("surface fade requests one repaint without changing group height", () => {
 		vi.useFakeTimers();
 		const redraw = vi.fn();
-		const group = new ToolGroupView(ui(), redraw, () => false);
+		const group = new ToolGroupView(
+			ui(),
+			redraw,
+			() => false,
+			() => 0,
+		);
 		group.update([settledMember()], undefined, [], undefined);
 		const height = group.render(40).length;
 		vi.advanceTimersByTime(5_000);
@@ -186,12 +192,39 @@ describe("ToolGroupView lifetime", () => {
 	test("dispose cancels the pending surface hold, and is idempotent", () => {
 		vi.useFakeTimers();
 		const redraw = vi.fn();
-		const group = new ToolGroupView(ui(), redraw, () => false);
+		const group = new ToolGroupView(
+			ui(),
+			redraw,
+			() => false,
+			() => 0,
+		);
 		group.update([settledMember()], undefined, [], undefined);
 		group.render(40);
 		group.dispose();
 		group.dispose();
 		vi.advanceTimersByTime(5_000);
 		expect(redraw).not.toHaveBeenCalled();
+	});
+});
+
+describe("ToolGroupView output padding", () => {
+	test("frame rows take Pi's output padding, so they line up with the tool rows they wrap", () => {
+		const rows = (pad: number): string[] => {
+			const group = new ToolGroupView(
+				ui(),
+				() => undefined,
+				() => false,
+				() => pad,
+			);
+			group.update([settledMember()], undefined, [], { startedAt: 0 });
+			const rendered = group.render(20).filter((row) => row.trim() !== "");
+			group.dispose();
+			return rendered;
+		};
+		const flush = rows(0);
+		expect(flush.every((row) => !row.startsWith(" "))).toBe(true);
+		const padded = rows(1);
+		expect(padded).toHaveLength(flush.length);
+		expect(padded.every((row) => row.startsWith(" ") && !row.startsWith("  "))).toBe(true);
 	});
 });

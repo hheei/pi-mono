@@ -950,10 +950,10 @@ describe("two centralized host seams / original transcript projection", () => {
 		f.chat.children = [assistant(["a", "b"]), f.row("a"), f.row("b")];
 		const rows = show(f.chat).trim().split("\n");
 		expect(rows[0]).toContain("▸ collapse views · — · 2 calls");
-		expect(rows).toContain("▸ read ×1");
+		expect(rows).toContain(" ▸ read ×1");
 		// The group brackets its frame with two horizontal rails; the tail draws its own rows.
-		expect(rows.filter((row) => /^─+$/.test(row))).toHaveLength(2);
-		const footer = rows.indexOf("requests ×1 · ↑— · ↓—");
+		expect(rows.filter((row) => /^ ?─+$/.test(row))).toHaveLength(2);
+		const footer = rows.indexOf(" requests ×1 · ↑— · ↓—");
 		expect(footer).toBeGreaterThan(0);
 		// Exactly one blank row separates the block from the unit it keeps outside.
 		// One colored padding row closes the background, then the single uncolored separator.
@@ -986,7 +986,7 @@ describe("two centralized host seams / original transcript projection", () => {
 		// The tail is the transcript's last unit, not the call that finished or started last.
 		const tailRows = () => {
 			const rows = show(f.chat).split("\n");
-			const footer = rows.findIndex((row) => row.startsWith("requests ×"));
+			const footer = rows.findIndex((row) => row.trimStart().startsWith("requests ×"));
 			return rows.slice(footer).join("\n");
 		};
 		expect(tailRows()).toContain("✓ read");
@@ -1302,7 +1302,7 @@ describe("two centralized host seams / original transcript projection", () => {
 		f.chat.children = [assistant(["a", "b"], true), f.row("a"), notice, f.row("b")];
 		const rows = show(f.chat).split("\n");
 		const order = ["▸ notice · memory ×1", "▸ thinking x1 · 2 tokens", "▸ read ×1"].map((row) =>
-			rows.findIndex((line) => line.startsWith(row)),
+			rows.findIndex((line) => line.trimStart().startsWith(row)),
 		);
 		expect(order).toEqual([...order].sort((a, b) => a - b));
 		for (const index of order) expect(index).toBeGreaterThanOrEqual(0);
@@ -1325,8 +1325,8 @@ describe("two centralized host seams / original transcript projection", () => {
 		expect(preview).not.toContain("tokens");
 		clickRow(f.chat, "first paragraph");
 		const opened = show(f.chat).split("\n");
-		expect(opened).toContain("▎ first paragraph with a very long tail beyond twenty graphemes");
-		expect(opened).toContain("▎ second paragraph stays out of the preview");
+		expect(opened).toContain(" ▎ first paragraph with a very long tail beyond twenty graphemes");
+		expect(opened).toContain(" ▎ second paragraph stays out of the preview");
 		clickRow(f.chat, "▎ first paragraph");
 		expect(show(f.chat)).toContain("first paragraph with…");
 		expect(show(f.chat)).not.toContain("second paragraph stays out");
@@ -1360,9 +1360,9 @@ describe("two centralized host seams / original transcript projection", () => {
 		];
 		clickRow(f.chat, "▸ thinking");
 		const rows = show(f.chat).split("\n");
-		expect(rows).toContain("▎ para one");
+		expect(rows).toContain(" ▎ para one");
 		expect(rows).toContain("");
-		expect(rows).toContain("▎ para two");
+		expect(rows).toContain(" ▎ para two");
 		// Visible thinking is already the full text, so no item row offers to fold it.
 		expect(rows.some((row) => row.startsWith("▸ thinking"))).toBe(false);
 		const before = show(f.chat);
@@ -1448,7 +1448,7 @@ describe("two centralized host seams / original transcript projection", () => {
 		Reflect.set(message, "hideThinkingBlock", false);
 		f.chat.invalidate();
 		const rows = show(f.chat).split("\n");
-		expect(rows).toContain("▎ keep this reasoning");
+		expect(rows).toContain(" ▎ keep this reasoning");
 		expect(rows.some((row) => row.startsWith("▸ thinking"))).toBe(false);
 	});
 
@@ -1526,7 +1526,7 @@ describe("two centralized host seams / original transcript projection", () => {
 		const rows = show(f.chat).split("\n");
 		const content = rows.filter((row) => row.includes("om: observer"));
 		expect(content).toHaveLength(1);
-		expect(content[0]).toMatch(/^ om: observer/);
+		expect(content[0]).toMatch(/^ +om: observer/);
 		expect(content[0]).not.toContain("▸");
 		const before = show(f.chat);
 		clickRow(f.chat, "om: observer");
@@ -1709,11 +1709,11 @@ describe("two centralized host seams / original transcript projection", () => {
 		clickRow(f.chat, "▸ notice · info ×1");
 		const rows = show(f.chat).split("\n");
 		expect(rows.filter((row) => row.includes("first notice"))).toHaveLength(1);
-		expect(rows.find((row) => row.includes("first notice"))).toMatch(/^ first notice/);
+		expect(rows.find((row) => row.includes("first notice"))).toMatch(/^ +first notice/);
 		expect(rows.find((row) => row.includes("Warning: second notice"))).toMatch(
-			/^ Warning: second notice/,
+			/^ +Warning: second notice/,
 		);
-		expect(rows.find((row) => row.includes("detail"))).toMatch(/^ detail/);
+		expect(rows.find((row) => row.includes("detail"))).toMatch(/^ +detail/);
 		expect(rows.filter((row) => row.includes("▸ Warning"))).toHaveLength(0);
 		const before = show(f.chat);
 		clickRow(f.chat, "first notice");
@@ -1973,9 +1973,9 @@ describe("two centralized host seams / original transcript projection", () => {
 		expect(show(f.chat)).toContain("▸ thinking x1 ·");
 		clickRow(f.chat, "▸ thinking");
 		const rows = show(f.chat).split("\n");
-		expect(rows).toContain("▎ first paragraph");
+		expect(rows).toContain(" ▎ first paragraph");
 		expect(rows).toContain("");
-		expect(rows).toContain("▎ second paragraph");
+		expect(rows).toContain(" ▎ second paragraph");
 	});
 
 	test("a block that does not group shows no orphan footer", () => {
@@ -2174,7 +2174,7 @@ describe("two centralized host seams / original transcript projection", () => {
 		const rows = show(f.chat).split("\n");
 		// Header, category, the opened tool's own rows, and the footer are one background block.
 		expect(rows.filter((row) => row.includes("[bg:toolSuccessBg]")).length).toBeGreaterThan(4);
-		expect(show(f.chat)).toContain("[bg:toolSuccessBg][dim]requests");
+		expect(show(f.chat)).toContain("[bg:toolSuccessBg] [dim]requests");
 	});
 
 	test("the expanded block is transparent and keeps block backgrounds", () => {

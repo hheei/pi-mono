@@ -357,7 +357,8 @@ function attach(
 			}
 			if (first !== undefined && weight >= 2) {
 				const group =
-					groups.get(first) ?? new ToolGroupView(host.ui, host.requestRender, background);
+					groups.get(first) ??
+					new ToolGroupView(host.ui, host.requestRender, background, outputPad);
 				const boundaryTime =
 					ended && boundary !== undefined
 						? (run.observed.get(boundary)?.at ?? performance.now())
