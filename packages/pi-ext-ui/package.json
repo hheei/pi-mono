@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-ext-ui",
-	"version": "0.8.3",
+	"version": "0.8.4",
 	"description": "Collapsible tool rendering frame and tool renderer pilot for Pi.",
 	"type": "module",
 	"main": "dist/index.js",
