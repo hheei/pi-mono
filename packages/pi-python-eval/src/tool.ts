@@ -27,25 +27,25 @@ const DEFAULT_TIMEOUT_MS = 180_000;
 /** Largest delay `setTimeout` supports, which bounds `timeout_ms` exactly like codemode's option. */
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const EVAL_DESCRIPTION =
-	"Run trusted local Python in a persistent session kernel. Use python_eval for multi-step computation that reuses bindings. Nested tools.name(...) calls are synchronous; do not await them. Every cell reports its namespace, so bindings stay visible across calls. This is not a sandbox. Do not write any comments in the code.";
+	"Run trusted local Python in a persistent session kernel. Use python_eval for multi-step computation over one shared namespace: write a helper once and call it from later cells. Nested tools.name(...) calls are synchronous; do not await them. Every cell reports the names it added, so what the kernel holds stays visible across calls. This is not a sandbox. Do not write any comments in the code.";
 const EVAL_CODE_DESCRIPTION =
 	"Non-empty trusted source, at most 1 MiB. Do not write any comments in the code.";
 const EVAL_TIMEOUT_DESCRIPTION =
 	"Hard deadline for the whole cell, in milliseconds. Defaults to 180000 (180 seconds).";
 export const PYTHON_EVAL_PROMPT_SNIPPET =
-	"Persistent Python kernel. One cell per call; names survive across cells until a cell reports the kernel restarted.";
+	"Persistent Python kernel. One cell per call; names and functions survive across cells until a cell reports the kernel restarted.";
 
 export function pythonEvalPromptGuidelines(): string[] {
 	return [
 		"python_eval: use for computation, data wrangling, and inspecting values that should persist across cells.",
 		"python_eval: use bash for one-shot shell, grep/find for search, and edit/write for file changes. Do not run JS/Python via bash -e/-c.",
-		"python_eval: import, define, and load once, then keep using those names in later cells. Each cell reports the names it added and any import it repeated, so state is visible instead of assumed.",
+		"python_eval: a cell that would repeat earlier work defines a function instead: `def load(path): ...` once, then `load(a)` and `load(b)` in later cells. Import, define, and load once, then keep using those names; each cell reports the names it added and any import it repeated.",
 		"python_eval: re-run setup only when a cell reports the kernel restarted, or after reset: true.",
 		"python_eval: use Python. Nested tools are synchronous: `result = tools.name(...)` with kwargs or a dict; do not use await. Top-level await is unsupported.",
 		"python_eval: nested tools are read, grep, find, foreground bash, edit, write, and apply_patch. No python_eval, wait, or other extension tools. Nested bash rejects async.",
 		"python_eval: nested tools return text strings, or structured dicts for tools declaring schemas (e.g. bash).",
 		"python_eval: print/console go to the transcript. display() keeps JSON-safe values. The last expression is the result; undefined/None is omitted.",
-		"python_eval: names() lists the current top-level names when you need to check what a kernel still holds.",
+		"python_eval: names() lists what the kernel holds. Check it before defining a name again, and call the helper you already wrote instead of pasting it.",
 		"python_eval: reset: true wipes the Python kernel and scope. timeout_ms is a hard deadline for the whole cell, defaulting to 180000 (180 seconds); nested tool calls count toward it. On error, fix and re-run only the failing cell.",
 		"python_eval: a compile-time SyntaxError prevents the entire cell from running, including assignments before the error. Fix and re-run the whole cell; use the reported namespace to check what survived runtime errors.",
 		"python_eval: do not write any comments in the code. Write only executable code.",
