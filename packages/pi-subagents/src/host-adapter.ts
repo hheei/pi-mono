@@ -3,7 +3,7 @@ import { errorMessage, runCommand, shellQuote } from "@hheei/pi-ext-core";
 import type { LaunchSpec } from "./launch-spec.js";
 import type { HostList } from "./lease.js";
 
-export type HostKind = "herdr" | "cmux";
+export type HostKind = "herdr" | "cmux" | "rex";
 
 export interface HostCommandResult {
 	readonly stdout: string;
@@ -81,7 +81,7 @@ export interface SelectHostAdapterOptions {
 	readonly preferredHost?: HostKind;
 }
 
-const DEFAULT_HOST_ORDER: readonly HostKind[] = ["herdr", "cmux"];
+const DEFAULT_HOST_ORDER: readonly HostKind[] = ["herdr", "cmux", "rex"];
 
 /** Selects a presentation host visibly; an explicit unavailable host never falls back. */
 export async function selectHostAdapter(options: SelectHostAdapterOptions): Promise<HostSelection> {
@@ -273,6 +273,67 @@ export function createHerdrHostAdapter(options: HostAdapterOptions): HostAdapter
 	};
 }
 
+/**
+ * The Rex host: the child's panel is a window of its own in the parent's session. Rex identifies a
+ * program by the block it runs in, and a block's process list is the kernel's answer, so ownership
+ * is proved the same way it is for a herdr pane: the block's foreground process has to be this
+ * process or one of its ancestors.
+ */
+export function createRexHostAdapter(options: HostAdapterOptions): HostAdapter {
+	const runner = options.runner ?? systemHostCommandRunner;
+	const timeoutMs = options.timeoutMs ?? 10_000;
+	const env = options.env ?? process.env;
+	return {
+		kind: "rex",
+		async probe(): Promise<HostCapability> {
+			const owned = await resolveRexOwnedBlock(runner, timeoutMs, { env });
+			return owned.block === undefined
+				? {
+						host: "rex",
+						available: false,
+						reason: owned.reason ?? "no Rex block runs this process",
+					}
+				: {
+						host: "rex",
+						available: true,
+						reason: `block ${owned.block} runs this process`,
+					};
+		},
+		async open(spec): Promise<HostAttachment> {
+			// A dedicated window, not a split: the child TUI owns its own window, the parent keeps its
+			// layout and focus, and the window and block carry the child id so a human can tell whose
+			// panel it is.
+			const owned = await resolveRexOwnedBlock(runner, timeoutMs, { env });
+			if (owned.block === undefined || owned.session === undefined) {
+				throw new Error(`rex panel: ${owned.reason ?? "no Rex block runs this process"}`);
+			}
+			const created = await runner.run("rex", rexWindowCreateArgs(spec, owned.session), {
+				timeoutMs,
+			});
+			const failure = rexCommandSucceeded(created)
+				? undefined
+				: describeHostFailure(created, "rex session.new_window");
+			if (failure !== undefined) throw new Error(`rex window failed: ${failure}`);
+			const blockId = parseRexBlockId(created.stdout);
+			if (blockId === undefined) {
+				throw new Error(
+					`rex session.new_window returned no block (${created.timedOut ? "timed out" : created.stderr.trim() || "no error reported"})`,
+				);
+			}
+			const session = owned.session;
+			return hostAttachment({
+				identity: { host: "rex", attachmentId: blockId, createdBy: options.ownerId },
+				launch: created,
+				noun: "window",
+				reportsFocus: true,
+				observe: () => observeRexBlock(runner, timeoutMs, { blockId, session }),
+				close: () => runner.run("rex", ["block", "close", blockId], { timeoutMs }),
+				ownsAttachment: options.ownsAttachment,
+			});
+		},
+	};
+}
+
 export function createCmuxHostAdapter(options: HostAdapterOptions): HostAdapter {
 	const runner = options.runner ?? systemHostCommandRunner;
 	const timeoutMs = options.timeoutMs ?? 10_000;
@@ -341,7 +402,7 @@ export function createCmuxHostAdapter(options: HostAdapterOptions): HostAdapter 
 interface HostAttachmentOptions {
 	readonly identity: HostAttachmentIdentity;
 	readonly launch: HostCommandResult;
-	readonly noun: "pane" | "surface" | "tab";
+	readonly noun: "pane" | "surface" | "tab" | "window";
 	readonly reportsFocus: boolean;
 	/** Reads the child's process state; `alive: undefined` means the host could not answer. */
 	readonly observe: () => Promise<{
@@ -640,6 +701,327 @@ export function rebindCmuxSurface(options: {
 			}),
 		ownsAttachment: options.ownsAttachment,
 	});
+}
+
+/** The environment Rex sets in every program it starts in a block. */
+export const REX_BLOCK_ENV = "REX_BLOCK";
+export const REX_SESSION_ENV = "REX_SESSION";
+
+interface RexOwnership {
+	readonly block?: string;
+	readonly session?: string;
+	readonly reason?: string;
+}
+
+/**
+ * Finds the block that is running this process. `REX_BLOCK` is the candidate the environment names,
+ * but it is only a hint: a block has to prove it owns this process, because the variables are
+ * inherited and outlive the block that set them. `REX_SESSION` names the session the parent is in,
+ * which is where a panel belongs; without it there is nowhere to put one.
+ */
+export async function resolveRexOwnedBlock(
+	runner: HostCommandRunner,
+	timeoutMs: number,
+	options: { readonly env?: NodeJS.ProcessEnv },
+): Promise<RexOwnership> {
+	const block = options.env?.[REX_BLOCK_ENV]?.trim();
+	if (block === undefined || block === "") {
+		return { reason: "REX_BLOCK is not set: this process does not run in a Rex block" };
+	}
+	const ancestry = await processAncestry(runner, timeoutMs);
+	if (ancestry === undefined) return { reason: "could not read this process tree" };
+	const info = await runner.run("rex", ["block", "call", "-b", block, "process"], { timeoutMs });
+	if (!rexCommandSucceeded(info)) {
+		return { reason: describeHostFailure(info, `rex block call ${block} process`) };
+	}
+	if (!rexBlockRunsProcess(info.stdout, ancestry)) {
+		return { reason: `block ${block} does not run this process` };
+	}
+	const session = options.env?.[REX_SESSION_ENV]?.trim();
+	if (session === undefined || session === "") {
+		return { reason: "REX_SESSION is not set: the parent's session is unknown" };
+	}
+	return { block, session };
+}
+
+/**
+ * True when the block's foreground process is this process or one of its ancestors. The terminal's
+ * own program is excluded: an idle block reports its shell as both the terminal program and the
+ * foreground, so counting it would let anything started from that block — a backgrounded `pi &` —
+ * claim the block it was started from.
+ */
+export function rexBlockRunsProcess(output: string, ancestry: ReadonlySet<number>): boolean {
+	const process_ = rexProcessInfo(output);
+	if (process_ === undefined) return false;
+	const foreground = process_.foreground?.pid;
+	const child = process_.child?.pid;
+	return typeof foreground === "number" && foreground !== child && ancestry.has(foreground);
+}
+
+/**
+ * The arguments that open the child's window. Rex's terminal has no environment option, so the
+ * bridge variables ride in through `env` as the program's own argv: the terminal starts a program
+ * directly, and those arguments reach it unchanged.
+ */
+export function rexWindowCreateArgs(spec: LaunchSpec, session: string): string[] {
+	const request = {
+		focus: false,
+		window_label: `subagent ${spec.config.subagentId}`,
+		layout: {
+			block: {
+				flavor: "com.superlogical.terminal.shell",
+				label: spec.config.subagentId,
+				options: { cwd: spec.cwd, command: rexLaunchArgv(spec) },
+			},
+		},
+	};
+	return ["api", "call", "-s", session, "session.new_window", JSON.stringify(request)];
+}
+
+export function rexLaunchArgv(spec: LaunchSpec): string[] {
+	const environment = Object.entries(spec.env).map(([key, value]) => `${key}=${value}`);
+	const program = [spec.command, ...spec.argv];
+	return environment.length === 0 ? program : ["env", ...environment, ...program];
+}
+
+/** Watches one child block: its program, whether it is still there, and whether a human sees it. */
+async function observeRexBlock(
+	runner: HostCommandRunner,
+	timeoutMs: number,
+	target: { readonly blockId: string; readonly session?: string },
+): Promise<{
+	readonly process: HostCommandResult;
+	readonly alive?: boolean;
+	readonly containerGone?: boolean;
+	readonly focused?: boolean;
+}> {
+	const session = target.session;
+	const [process, view] = await Promise.all([
+		runner.run("rex", ["block", "call", "-b", target.blockId, "process"], { timeoutMs }),
+		session === undefined
+			? Promise.resolve(undefined)
+			: runner.run("rex", ["api", "call", "-s", session, "session.view"], { timeoutMs }),
+	]);
+	const alive = rexBlockAlive(process);
+	// A listing that did not answer says nothing about focus: reading it anyway turns a failed
+	// command into "unfocused", and the caller closes a panel on that answer.
+	const focused =
+		view === undefined || !rexCommandSucceeded(view)
+			? undefined
+			: rexBlockFocused(view.stdout, target.blockId);
+	return {
+		process,
+		...(alive === undefined ? {} : { alive }),
+		...(alive === false ? { containerGone: true } : {}),
+		...(focused === undefined ? {} : { focused }),
+	};
+}
+
+/**
+ * Reads the block's program state. A block that no longer exists is a definite "not alive" — that is
+ * how a closed panel looks — while a query that failed for any other reason is unknown, because the
+ * caller closes the panel on "not alive".
+ */
+export function rexBlockAlive(result: HostCommandResult): boolean | undefined {
+	if (rexTargetGone(result)) return false;
+	if (!rexCommandSucceeded(result)) return undefined;
+	const info = rexProcessInfo(result.stdout);
+	if (info === undefined) return undefined;
+	return info.last_exit === null || info.last_exit === undefined;
+}
+
+/**
+ * True when a human is looking at the child: its window is the session's active window and the block
+ * is the one that window has focused. A block that is not in the view is unknown, never "unfocused".
+ */
+export function rexBlockFocused(output: string, blockId: string): boolean | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return undefined;
+	}
+	const record = parsed as { active_window_id?: unknown; windows?: unknown };
+	if (!Array.isArray(record.windows)) return undefined;
+	for (const window of record.windows) {
+		if (typeof window !== "object" || window === null) continue;
+		const entry = window as { window_id?: unknown; focused_block_id?: unknown; layers?: unknown };
+		if (!Array.isArray(entry.layers)) continue;
+		const holds = entry.layers.some((layer) => {
+			if (typeof layer !== "object" || layer === null) return false;
+			const blocks = (layer as { blocks?: unknown }).blocks;
+			if (!Array.isArray(blocks)) return false;
+			return blocks.some(
+				(block) =>
+					typeof block === "object" &&
+					block !== null &&
+					(block as { block_id?: unknown }).block_id === blockId,
+			);
+		});
+		if (!holds) continue;
+		if (record.active_window_id !== entry.window_id) return false;
+		return entry.focused_block_id === blockId;
+	}
+	return undefined;
+}
+
+/** The session that holds a block, for a panel rebound after a reload. */
+export async function resolveRexSession(
+	runner: HostCommandRunner,
+	timeoutMs: number,
+	blockId: string,
+): Promise<string | undefined> {
+	const resolved = await runner.run(
+		"rex",
+		["api", "call", "target.resolve", JSON.stringify({ queries: [blockId], kinds: ["block"] })],
+		{ timeoutMs },
+	);
+	if (!rexCommandSucceeded(resolved)) return undefined;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(resolved.stdout) as unknown;
+	} catch {
+		return undefined;
+	}
+	const results = (parsed as { results?: unknown }).results;
+	if (!Array.isArray(results)) return undefined;
+	for (const result of results) {
+		if (typeof result !== "object" || result === null) continue;
+		const target = (result as { target?: unknown }).target;
+		if (typeof target !== "object" || target === null) continue;
+		const session = (target as { session_id?: unknown }).session_id;
+		if (typeof session === "string" && session !== "") return session;
+	}
+	return undefined;
+}
+
+/**
+ * The blocks that exist, so recovery can tell a panel that is still there from one the server no
+ * longer has. The generation is the server instance: a restarted server has none of the old blocks.
+ */
+export async function listRexAttachments(
+	runner: HostCommandRunner,
+	timeoutMs: number,
+): Promise<HostList> {
+	const status = await runner.run("rex", ["api", "call", "server.status"], { timeoutMs });
+	if (!rexCommandSucceeded(status)) return { known: false };
+	const generation = rexGeneration(status.stdout);
+	if (generation === undefined) return { known: false };
+	const sessions = await runner.run("rex", ["api", "call", "session.list"], { timeoutMs });
+	if (!rexCommandSucceeded(sessions)) return { known: false };
+	const ids = rexSessionIds(sessions.stdout);
+	if (ids === undefined) return { known: false };
+	const present = new Set<string>();
+	for (const session of ids) {
+		const blocks = await runner.run("rex", ["block", "ls", "-q", "-s", session], { timeoutMs });
+		if (!rexCommandSucceeded(blocks)) return { known: false };
+		for (const line of blocks.stdout.split("\n")) {
+			const id = line.trim();
+			if (id !== "") present.add(id);
+		}
+	}
+	return { known: true, generation, present };
+}
+
+export function rebindRexBlock(options: {
+	readonly runner?: HostCommandRunner;
+	readonly blockId: string;
+	readonly ownerId: string;
+	readonly timeoutMs?: number;
+	readonly ownsAttachment: (identity: HostAttachmentIdentity) => boolean;
+}): HostAttachment {
+	const runner = options.runner ?? systemHostCommandRunner;
+	const timeoutMs = options.timeoutMs ?? 10_000;
+	let session: string | undefined;
+	return hostAttachment({
+		identity: { host: "rex", attachmentId: options.blockId, createdBy: options.ownerId },
+		launch: { stdout: "", stderr: "", exitCode: 0, timedOut: false },
+		noun: "window",
+		reportsFocus: true,
+		observe: async () => {
+			// The registry keeps the block, not the session: resolve it once, then reuse the answer.
+			session ??= await resolveRexSession(runner, timeoutMs, options.blockId);
+			return observeRexBlock(runner, timeoutMs, {
+				blockId: options.blockId,
+				...(session === undefined ? {} : { session }),
+			});
+		},
+		close: () => runner.run("rex", ["block", "close", options.blockId], { timeoutMs }),
+		ownsAttachment: options.ownsAttachment,
+	});
+}
+
+interface RexProcessInfo {
+	readonly last_exit?: unknown;
+	readonly child?: { readonly pid?: unknown };
+	readonly foreground?: { readonly pid?: unknown } | null;
+}
+
+function rexProcessInfo(output: string): RexProcessInfo | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return undefined;
+	}
+	if (typeof parsed !== "object" || parsed === null) return undefined;
+	return parsed as RexProcessInfo;
+}
+
+/** The one block `session.new_window` created, from its answer. */
+function parseRexBlockId(output: string): string | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return undefined;
+	}
+	const ids = (parsed as { block_ids?: unknown }).block_ids;
+	if (!Array.isArray(ids)) return undefined;
+	const first = ids[0];
+	return typeof first === "string" && first !== "" ? first : undefined;
+}
+
+/** A restarted server has none of the blocks the registry remembers. */
+function rexGeneration(output: string): string | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return undefined;
+	}
+	const record = parsed as { instance_id?: unknown; started_at?: unknown };
+	const instance = record.instance_id;
+	if (typeof instance !== "string" || instance === "") return undefined;
+	return typeof record.started_at === "string" ? `${instance}@${record.started_at}` : instance;
+}
+
+function rexSessionIds(output: string): readonly string[] | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return undefined;
+	}
+	const sessions = (parsed as { sessions?: unknown }).sessions;
+	if (!Array.isArray(sessions)) return undefined;
+	const ids: string[] = [];
+	for (const session of sessions) {
+		if (typeof session !== "object" || session === null) continue;
+		const id = (session as { session_id?: unknown }).session_id;
+		if (typeof id === "string" && id !== "") ids.push(id);
+	}
+	return ids;
+}
+
+/** A Rex CLI command succeeded only when it exited zero: rejections go to stderr with a status. */
+function rexCommandSucceeded(result: HostCommandResult): boolean {
+	return !result.timedOut && result.exitCode === 0;
+}
+
+/** A block or session that is gone answers with a not-found rejection; anything else is unknown. */
+function rexTargetGone(result: HostCommandResult): boolean {
+	return !result.timedOut && result.exitCode !== 0 && /not found/i.test(result.stderr);
 }
 
 function herdrCollection(output: string, collection: string): readonly unknown[] | undefined {

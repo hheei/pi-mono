@@ -430,11 +430,19 @@ seam 只有一个：`HostDirectory`。生产 adapter 包现有的 Herdr/cmux 列
 
 ## 7. Host 与 UI 合同
 
-HostAdapter 只负责 capability probe、开 panel（Herdr 新 tab / cmux 新 surface）、观察 panel（含聚焦状态）与 cleanup，返回可观察 attachment。
+HostAdapter 只负责 capability probe、开 panel（Herdr 新 tab / cmux 新 surface / Rex 新 window）、观察 panel（含聚焦状态）与 cleanup，返回可观察 attachment。
 
 - herdr：`tab create`（`--cwd`、`--no-focus`、`--label <subagentId>`、`--env`）后用 `pane run <root pane> <LaunchSpec argv>` 运行 child，cleanup 关闭该 tab；聚焦 = 该 tab 的 `focused` 且其 workspace 的 `focused`。
 - panel child 的 LaunchSpec 带 `--approve`，因为 parent 已明确选择并提供了项目级 agent、extension 与 skill 配置；native Pi TUI 启动不得停在项目文件信任提示上。
 - cmux：`new-surface --command`；聚焦状态无文档化查询，因此 fail open（不自动回收），代码内以 `TODO(cmux-focus)` 标注。
+- rex：`session.new_window`（`focus: false`，window/block 都带 `<subagentId>` 标签，block flavor 为
+  `com.superlogical.terminal.shell`）直接以 argv 运行 child；Rex 的 terminal flavor 没有 env 选项，
+  所以 bridge 变量走 `env K=V … <LaunchSpec argv>` 作为程序自身参数（terminal 直接启动程序，
+  参数原样送达）。cleanup 是 `block close <blockId>`（block id 全局唯一，不需要 session）。
+  归属 = `rex block call -b <REX_BLOCK> process` 的 foreground 是本进程或祖先，且不是 terminal 自身
+  程序（idle block 两者相同，因此 `pi &` 拿不到该 block）；`REX_BLOCK`/`REX_SESSION` 只是提示。
+  聚焦 = 该 block 所在 window 是 `active_window_id` 且 `focused_block_id` 就是它；`session.view`
+  查不到该 block 时回答未知而不是「未聚焦」。reload 后只有 block id 时用 `target.resolve` 找回 session。
 - 关闭 panel 只证明 attachment 消失，不证明进程已死；进程证据以进程锁消失（+ 后台 child 的进程句柄）为准。
 - 开 panel 不是原子操作：host 可能已经建好 panel 并跑起进程，只是没能把结果报回来。此时 launch 明确报「未确认」，**保留** runtime 证据（child 真起来了还能被 adopt），并且不因此允许第二个 runtime。
 - `observe().alive` 回答的是「这个 child 的进程是否还在该 panel 里运行」，不是「panel 是否存在」：host 关闭命令失败但 child 已死时 stop 仍算完成，残留的空 tab 由人处理。判断「已关闭」必须 `known === true`：观察超时或查询失败都算未知，未知既不算已关闭，也不触发回收。
@@ -442,7 +450,7 @@ HostAdapter 只负责 capability probe、开 panel（Herdr 新 tab / cmux 新 su
 
 - attachment 暴露 `reportsFocus`：宿主能报告聚焦时 manager 才为它安排 idle 回收，能力缺失时明确退化为「只由 stop 关」。
 
-默认顺序为 herdr 后 cmux，用户明确指定时按指定选择；选择和 fallback 原因必须可见，不能静默改变执行 provider：选择结果写在启动诊断里，而每次 spawn 的结果都带上 `presentation` 与 fallback 说明。
+默认顺序为 herdr、cmux 后 rex，用户明确指定时按指定选择；选择和 fallback 原因必须可见，不能静默改变执行 provider：选择结果写在启动诊断里，而每次 spawn 的结果都带上 `presentation` 与 fallback 说明。
 
 parent 只在 spawn 时选 host：它持有 panel 的 attachment（身份、观察、清理），但绝不解析终端输出、不镜像 transcript、不替 child 构造第二份 argv。
 

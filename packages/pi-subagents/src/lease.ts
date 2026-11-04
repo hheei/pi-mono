@@ -1,4 +1,4 @@
-import type { SubagentRecord } from "./domain.js";
+import type { PanelHost, SubagentRecord } from "./domain.js";
 import { type SubagentRegistry, SubagentRegistryError } from "./registry.js";
 import { openStateDb, readMeta, writeMeta } from "./state-db.js";
 
@@ -44,7 +44,7 @@ export type HostList =
 	| { readonly known: true; readonly generation: string; readonly present: ReadonlySet<string> };
 
 export interface HostDirectory {
-	readonly host: "herdr" | "cmux";
+	readonly host: PanelHost;
 	list(): Promise<HostList>;
 	/** Opens the same child session in a new panel. Does not write the lease. */
 	open(record: SubagentRecord): Promise<{ readonly id: string } | { readonly failure: string }>;

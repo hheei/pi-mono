@@ -170,7 +170,7 @@ export interface ResolvedAgentPolicy {
  * The runtime attachment a child was last launched with. It is evidence, never a liveness proof:
  * whether that process is still serving this child is answered by the bridge connection.
  */
-export type PanelHost = "herdr" | "cmux";
+export type PanelHost = "herdr" | "cmux" | "rex";
 
 /**
  * The surface that owns a child runtime. A panel id is a host tab or surface. A process id is a

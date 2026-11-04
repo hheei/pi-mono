@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { errorMessage } from "@hheei/pi-ext-core";
 import { type ChildRuntime, spawnChildRuntime } from "./child-process.js";
-import type { Presentation, SubagentRecord } from "./domain.js";
+import type { PanelHost, Presentation, SubagentRecord } from "./domain.js";
 import type { HostAdapter, HostAttachment, HostObservation } from "./host-adapter.js";
 import { buildLaunchSpec, type LaunchSpec } from "./launch-spec.js";
 import { commitLease } from "./lease.js";
@@ -248,7 +248,7 @@ async function bindProcess(
 async function bindPanel(
 	registry: Pick<SubagentRegistry, "get" | "update">,
 	id: string,
-	host: "herdr" | "cmux",
+	host: PanelHost,
 	attachmentId: string,
 ): Promise<void> {
 	await commitLease(registry, id, {

@@ -569,7 +569,7 @@ test("cmux probe requires a successful capabilities query after ping", async () 
 	expect(capability.reason).toBe("cmux capabilities failed: no socket methods");
 });
 
-function fakeAdapter(kind: "herdr" | "cmux", available: boolean): HostAdapter {
+function fakeAdapter(kind: "herdr" | "cmux" | "rex", available: boolean): HostAdapter {
 	return {
 		kind,
 		probe: async () => ({
@@ -588,6 +588,7 @@ test("default selection falls back from Herdr to cmux and records the reason", a
 		adapters: {
 			herdr: fakeAdapter("herdr", false),
 			cmux: fakeAdapter("cmux", true),
+			rex: fakeAdapter("rex", false),
 		},
 	});
 	expect(selection.available).toBe(true);
@@ -603,6 +604,7 @@ test("explicit unavailable host fails without silent fallback", async () => {
 		adapters: {
 			herdr: fakeAdapter("herdr", false),
 			cmux: fakeAdapter("cmux", true),
+			rex: fakeAdapter("rex", false),
 		},
 	});
 	expect(selection).toMatchObject({ available: false, selectedHost: null });

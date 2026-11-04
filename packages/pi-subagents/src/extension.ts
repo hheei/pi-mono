@@ -13,20 +13,25 @@ import { discoverAgents, type SkillCatalogEntry } from "./agent-resolver.js";
 import { registerChildBridge } from "./child-bridge.js";
 import { registerParentCommands } from "./commands.js";
 import { activeControllerRole } from "./controller-role.js";
-import type { ChildIdentity, RuntimeAttachment, SubagentRecord } from "./domain.js";
+import type { ChildIdentity, PanelHost, RuntimeAttachment, SubagentRecord } from "./domain.js";
 import { BRIDGE_ENVIRONMENT_KEYS, isThinkingLevel } from "./domain.js";
 import {
 	createCmuxHostAdapter,
 	createHerdrHostAdapter,
+	createRexHostAdapter,
+	type HostAttachment,
 	type HostAttachmentIdentity,
 	listCmuxAttachments,
 	listHerdrAttachments,
+	listRexAttachments,
 	rebindCmuxSurface,
 	rebindHerdrTab,
+	rebindRexBlock,
 	selectHostAdapter,
 	systemHostCommandRunner,
 } from "./host-adapter.js";
 import { appendSubagentInfo, displaySubagentText, registerSubagentInfo } from "./info.js";
+import type { HostList } from "./lease.js";
 import { createMailboxTransport } from "./mailbox.js";
 import { type ParentChannel, type ParentChannelReport, SubagentManager } from "./manager.js";
 import { transformSubagentsMarkdown } from "./markdown.js";
@@ -82,6 +87,50 @@ function childIdentityFromEnv(env: NodeJS.ProcessEnv): ChildIdentity | undefined
  * microtask batch; the shared coordinator makes this channel and the Bash one agree on which
  * message requests it.
  */
+/**
+ * The host's own listing of what still exists. Recovery asks one question — is this attachment still
+ * there? — and each host answers it with its own inventory.
+ */
+function listHostAttachments(host: PanelHost): Promise<HostList> {
+	switch (host) {
+		case "herdr":
+			return listHerdrAttachments(systemHostCommandRunner, 10_000);
+		case "cmux":
+			return listCmuxAttachments(systemHostCommandRunner, 10_000);
+		case "rex":
+			return listRexAttachments(systemHostCommandRunner, 10_000);
+	}
+}
+
+/** A panel that survived a parent reload is watched, never reopened: the child owns its own TUI. */
+function rebindHostAttachment(options: {
+	readonly host: PanelHost;
+	readonly attachmentId: string;
+	readonly ownerId: string;
+	readonly ownsAttachment: (identity: HostAttachmentIdentity) => boolean;
+}): HostAttachment {
+	switch (options.host) {
+		case "herdr":
+			return rebindHerdrTab({
+				tabId: options.attachmentId,
+				ownerId: options.ownerId,
+				ownsAttachment: options.ownsAttachment,
+			});
+		case "cmux":
+			return rebindCmuxSurface({
+				surfaceId: options.attachmentId,
+				ownerId: options.ownerId,
+				ownsAttachment: options.ownsAttachment,
+			});
+		case "rex":
+			return rebindRexBlock({
+				blockId: options.attachmentId,
+				ownerId: options.ownerId,
+				ownsAttachment: options.ownsAttachment,
+			});
+	}
+}
+
 export function createParentChannel(
 	pi: Pick<ExtensionAPI, "sendMessage" | "on" | "appendEntry">,
 	deps: {
@@ -212,6 +261,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 						adapters: {
 							herdr: createHerdrHostAdapter({ ownerId, ownsAttachment }),
 							cmux: createCmuxHostAdapter({ ownerId, ownsAttachment }),
+							rex: createRexHostAdapter({ ownerId, ownsAttachment }),
 						},
 					});
 			const channel =
@@ -331,10 +381,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 					? {
 							directory: {
 								host: hostSelection.selectedHost,
-								list: () =>
-									hostSelection.selectedHost === "herdr"
-										? listHerdrAttachments(systemHostCommandRunner, 10_000)
-										: listCmuxAttachments(systemHostCommandRunner, 10_000),
+								list: () => listHostAttachments(hostSelection.selectedHost),
 								open: async (record: SubagentRecord) => {
 									const launch = await openChildPanel({
 										registry,
@@ -356,12 +403,15 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 									}
 									return { id: launch.handle.identity.attachmentId };
 								},
-								rebind: (attachment: RuntimeAttachment) => {
-									if (attachment.kind !== "panel") return undefined;
-									return attachment.host === "herdr"
-										? rebindHerdrTab({ tabId: attachment.id, ownerId, ownsAttachment })
-										: rebindCmuxSurface({ surfaceId: attachment.id, ownerId, ownsAttachment });
-								},
+								rebind: (attachment: RuntimeAttachment) =>
+									attachment.kind === "panel"
+										? rebindHostAttachment({
+												host: attachment.host,
+												attachmentId: attachment.id,
+												ownerId,
+												ownsAttachment,
+											})
+										: undefined,
 							},
 						}
 					: {}),

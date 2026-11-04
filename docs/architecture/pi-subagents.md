@@ -9,8 +9,8 @@ Ownership:
 
 - Parent branch: agent policy, the sqlite ledger, SubagentManager, model-facing tools, UX.
 - Child branch: command dispatch, lifecycle reporting, `contact_parent`. Not a manager, and it never closes its own panel.
-- HostAdapter: Herdr tab / cmux surface open/observe/cleanup (including the `focused` answer and the
-  `reportsFocus` capability). Not identity, and never a second Pi argv builder: the parent builds the
+- HostAdapter: Herdr tab / cmux surface / Rex window open/observe/cleanup (including the `focused`
+  answer and the `reportsFocus` capability). Not identity, and never a second Pi argv builder: the parent builds the
   LaunchSpec, the host only runs it and reports what it observes.
 
 Host attachment is decided by a fact, not by the environment. A pane is this process's pane only when
@@ -20,7 +20,11 @@ wrapper (`pnpm exec`, a supervisor) runs this process as a child while the pane'
 still the Pi above it. The pane's own shell is excluded: it is the idle fallback, so counting it would
 let `pi &` or anything else started from that terminal claim the pane. `HERDR_ENV`, `HERDR_PANE_ID`
 and `HERDR_WORKSPACE_ID` are inherited and outlive the pane that set them, so they only order the
-candidates; a pane still has to prove it runs this process. `herdr pane current --current` answers
+candidates; a pane still has to prove it runs this process. Rex answers the same question from the
+other side: `rex block call -b <REX_BLOCK> process` names the block's terminal program and its
+foreground process, and the block is this process's only when the foreground is one of its ancestors
+and is not the terminal program itself (an idle block reports its shell as both, so `pi &` stays
+out). `herdr pane current --current` answers
 which pane a human is looking at and is therefore never used as identity. No match means no panel, and
 the child runs in the background.
 
@@ -44,8 +48,8 @@ subscriptions); a surviving child keeps writing the same file, and a background 
 stdin pipe, so it ends with the parent process.
 
 There is no attach or detach: a child is presented where it was spawned and never switches
-afterwards. `agents_delegate` prefers a panel (a new Herdr tab or cmux surface
-running the child's own Pi TUI) targeting the workspace of the pane that runs this process, and falls back to a headless
+afterwards. `agents_delegate` prefers a panel (a new Herdr tab, cmux surface, or Rex
+window running the child's own Pi TUI) targeting the workspace of the pane that runs this process, and falls back to a headless
 background process when this parent has no host. Panel launches pass Pi's `--approve` flag so project-file
 trust cannot interrupt startup. The presentation is frozen in the registry as `panel` | `background` (see
 [`spec.md`](../pi-subagents/spec.md) §2.2).
