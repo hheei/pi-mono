@@ -15,6 +15,8 @@ export class ToolUiRuntime {
 	readonly #invalidators = new Map<string, () => void>();
 	/** Pi-native per-tool backgrounds are opt-in; the default is the quiet transparent row. */
 	backgrounds = false;
+	/** The copy control is on by default; only an explicit setting removes it from every row. */
+	copyControl = true;
 
 	rememberRow(toolCallId: string, invalidate: () => void): void {
 		if (!this.#invalidators.has(toolCallId) && this.#invalidators.size >= MAX_LIVE_ROWS) {

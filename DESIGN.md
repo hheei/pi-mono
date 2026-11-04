@@ -170,7 +170,7 @@ thinking 项每项只有一行：约 20 个 grapheme 的预览（`▎` 导轨）
 - `pi-subagents` 自动交付保持终态语义：`error` 不因报告发送变为 `blocked`；成功重试清除旧错误并显示 `done`。
 - `pi-subagents` 的自动报告按批次发出：没有其他 child 工作时 500ms 内发出，有 child 仍在工作时最多等 10 秒合并同批报告。批次延迟对 success、blocked、error 相同，只发送本次结果，不拼接历史回答。等待期间用户继续输入、parent 发送新消息或自动重试会取消旧报告；自动重试期间不报告暂时错误。
 
-- 后台 Bash 与子代理各自拥有工具展示格式，通过 ext-core 的纯 `ToolPresentation` 契约提供摘要、输入、结果与 copy 内容。加载 pi-ext-ui 时使用 ToolView 的折叠、上下段和 copy 控件；缺少 pi-ext-ui 时保留 Pi 原生主题与 Text 渲染。UI 不硬编码两族工具的字段。spawn 结果始终保留 ID 和路径，get 展示真实查询字段，错误保留可检查原文。
+- 后台 Bash 与子代理各自拥有工具展示格式，通过 ext-core 的纯 `ToolPresentation` 契约提供摘要、输入、结果与 copy 内容。加载 pi-ext-ui 时使用 ToolView 的折叠、上下段和 copy 控件（`toolGroups.copyControl` 关闭后 header 不再占右缘、截断提示也不再承诺 shift+click）；缺少 pi-ext-ui 时保留 Pi 原生主题与 Text 渲染。UI 不硬编码两族工具的字段。spawn 结果始终保留 ID 和路径，get 展示真实查询字段，错误保留可检查原文。
 
 ### Lists and Forms
 

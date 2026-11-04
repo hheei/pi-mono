@@ -625,7 +625,7 @@ function renderGenericResult(params: {
 		// children all failed to resolve is not one call.
 		...(childCalls.length === 0 ? {} : { childCount: resolvedCalls.length }),
 		sections,
-		copy,
+		copy: () => (runtime.copyControl ? copy : undefined),
 		outputPad: context.outputPad,
 		stateHolder: context.state,
 		defaultLevel,
@@ -755,6 +755,7 @@ function renderOwnedPresentation(params: {
 			...(duration === "" ? {} : { meta: duration }),
 		},
 		railToken,
+		copy: () => (runtime.copyControl ? copy : undefined),
 		// The tool owns the folded rows and their tones; the frame only sanitizes them for the host.
 		collapsedRows: (() => {
 			if (presentation.collapsedRows !== undefined) {
@@ -817,7 +818,6 @@ function renderOwnedPresentation(params: {
 		...(presentation.children === undefined ? {} : { children: presentation.children }),
 		...(presentation.childCount === undefined ? {} : { childCount: presentation.childCount }),
 		sections,
-		copy,
 		outputPad: context.outputPad,
 		stateHolder: context.state,
 		defaultLevel,
@@ -914,7 +914,7 @@ function createRendererResolver(
 					theme,
 					header: { title: toolName, status, ...header },
 					sections,
-					copy,
+					copy: () => (runtime.copyControl ? copy : undefined),
 					outputPad: context.outputPad,
 					stateHolder: context.state,
 					defaultLevel,

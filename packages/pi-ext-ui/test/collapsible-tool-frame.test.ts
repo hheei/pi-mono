@@ -2458,3 +2458,31 @@ describe("registerCollapsibleToolRenderer & formatTurnFlow", () => {
 		expect(clearCalls).toBe(2);
 	});
 });
+
+test("the copy control setting removes the icon from a row the host already holds", () => {
+	let captured: ToolRendererResolver | undefined;
+	const pi = {
+		registerFlag() {},
+		registerToolRenderer(resolver: ToolRendererResolver) {
+			captured = resolver;
+		},
+		on: () => () => {},
+	} as unknown as ExtensionAPI;
+	registerCollapsibleToolRenderer(pi, runtime);
+	const renderers = captured!("custom_random_tool", () => undefined);
+	const view = renderers!.renderResult!(
+		{ content: [{ type: "text", text: "line" }], details: {} },
+		{ expanded: false, isPartial: false },
+		plainTheme,
+		createMockContext(),
+	) as ToolView;
+
+	expect(view.render(40)[0]).toContain("󰆏");
+	runtime.copyControl = false;
+	try {
+		// The spec is fixed, the decision is not: the same view drops the control on the next paint.
+		expect(view.render(40)[0]).not.toContain("󰆏");
+	} finally {
+		runtime.copyControl = true;
+	}
+});

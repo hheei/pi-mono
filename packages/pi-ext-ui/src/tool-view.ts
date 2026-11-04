@@ -81,7 +81,11 @@ export interface ToolViewSpec {
 	/** Nested calls the tool made, when the list above is only what fits. */
 	readonly childCount?: number | undefined;
 	readonly collapsibleChildren?: readonly Collapsible[] | undefined;
-	readonly copy?: ToolViewCopySpec | undefined;
+	/**
+	 * Copy payload, or a getter when the caller owns the decision. Read per render, so a settings
+	 * change that hides the control reaches a view the host already holds.
+	 */
+	readonly copy?: ToolViewCopySpec | (() => ToolViewCopySpec | undefined) | undefined;
 	readonly stateHolder?: unknown;
 	readonly outputPad?: number | undefined;
 	readonly defaultLevel?: FoldLevel | undefined;
@@ -364,6 +368,8 @@ export class ToolView implements Component {
 				readonly copied: boolean;
 				readonly noRail: boolean;
 				readonly surface: string | undefined;
+				/** The copy control is drawn from a getter, so hiding it changes the rows it caches. */
+				readonly copyVisible: boolean;
 				/** Spinner frame the rows were drawn with; a live glyph invalidates the cache. */
 				readonly glyph: string;
 				readonly lines: string[];
@@ -468,8 +474,13 @@ export class ToolView implements Component {
 		this.setFoldLevel(transitionFoldLevel(this.effectiveLevel, ctrlKey));
 	}
 
+	#copy(): ToolViewCopySpec | undefined {
+		const copy = this.#spec.copy;
+		return typeof copy === "function" ? copy() : copy;
+	}
+
 	#triggerCopy(shiftKey: boolean): void {
-		const copySpec = this.#spec.copy;
+		const copySpec = this.#copy();
 		if (copySpec === undefined) return;
 		const payload =
 			shiftKey && copySpec.full !== undefined && copySpec.full !== ""
@@ -539,7 +550,8 @@ export class ToolView implements Component {
 	}
 
 	#renderHeader(width: number, level: FoldLevel): string {
-		const { theme, header, copy } = this.#spec;
+		const { theme, header } = this.#spec;
+		const copy = this.#copy();
 		const safeWidth = Math.max(1, width);
 		// A live tool says so in its leading slot: one glyph, no `▸` in front of a second status mark.
 		// A container that already lists child calls is not live any more, so it keeps the fold pin.
@@ -646,10 +658,9 @@ export class ToolView implements Component {
 			// The line that broke the cap is not an omitted whole line: its hidden part is `cutChunks`.
 			const omittedCount = rawLines.length - logicalLinesCount - (cutChunks > 0 ? 1 : 0);
 			// The hint names the real way to the hidden text; without a copy it must not promise one.
+			const copySpec = this.#copy();
 			const copyHint =
-				this.#spec.copy?.full !== undefined && this.#spec.copy.full !== ""
-					? ", shift+click copies all"
-					: "";
+				copySpec?.full !== undefined && copySpec.full !== "" ? ", shift+click copies all" : "";
 
 			for (const row of sectionRows) {
 				sectionOutput.push(truncate(rail + row, safeWidth));
@@ -678,6 +689,7 @@ export class ToolView implements Component {
 		const native = this.#spec.background?.() === true;
 		const surface = native ? nativeSurface(this.#spec.header.status) : undefined;
 		const noRail = this.#spec.noRail === true || native;
+		const copyVisible = this.#copy() !== undefined;
 		// The glyph of a live tool changes on its own clock, so a cached frame would freeze it.
 		const status = this.#spec.header.status;
 		const glyph = status === "streaming" || status === "running" ? toolSpinnerFrame() : "";
@@ -695,6 +707,7 @@ export class ToolView implements Component {
 			this.#cache.level === level &&
 			this.#cache.noRail === noRail &&
 			this.#cache.surface === surface &&
+			this.#cache.copyVisible === copyVisible &&
 			this.#cache.copied === copied &&
 			this.#cache.glyph === glyph
 		) {
@@ -728,7 +741,7 @@ export class ToolView implements Component {
 		this.#lastHeight = lines.length;
 		this.#cache = bodyOwnsItsClock
 			? undefined
-			: { width, level, copied, noRail, surface, glyph, lines };
+			: { width, level, copied, noRail, surface, copyVisible, glyph, lines };
 		return lines;
 	}
 
@@ -756,7 +769,7 @@ export class ToolView implements Component {
 		const row = event.y - this.#lastTopPad;
 		if (row === 0) {
 			if (
-				this.#spec.copy !== undefined &&
+				this.#copy() !== undefined &&
 				innerWidth >= 6 &&
 				innerX >= innerWidth - 3 &&
 				innerX < innerWidth

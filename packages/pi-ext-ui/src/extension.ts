@@ -17,6 +17,7 @@ import {
 	activityGroupsEnabled,
 	createToolGroupSettings,
 	toolBackgroundsEnabled,
+	toolCopyControlEnabled,
 } from "./settings.js";
 
 export default function (pi: ExtensionAPI): void {
@@ -57,9 +58,14 @@ export default function (pi: ExtensionAPI): void {
 				runtime.backgrounds = enabled;
 				redrawGroups?.();
 			};
+			const applyCopyControl = (enabled: boolean): void => {
+				runtime.copyControl = enabled;
+				redrawGroups?.();
+			};
 			const provider = createToolGroupSettings({
 				onEnabled: apply,
 				onBackgrounds: applyBackgrounds,
+				onCopyControl: applyCopyControl,
 			});
 			const onAgentStart = pi.on("agent_start", () => {
 				patch?.beginRun();
@@ -113,6 +119,7 @@ export default function (pi: ExtensionAPI): void {
 				if (!context.signal.aborted) {
 					apply(activityGroupsEnabled(state));
 					applyBackgrounds(toolBackgroundsEnabled(state));
+					applyCopyControl(toolCopyControlEnabled(state));
 				}
 			} catch (error) {
 				if (!context.signal.aborted) {
@@ -123,6 +130,7 @@ export default function (pi: ExtensionAPI): void {
 					);
 					apply(true);
 					applyBackgrounds(false);
+					applyCopyControl(true);
 				}
 			}
 		},
