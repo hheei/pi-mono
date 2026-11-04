@@ -11,7 +11,7 @@ import {
 import { AskComponent } from "./ask-prompt";
 import { INLINE_DOCK_RESERVED_ROWS } from "./constants";
 import { formatKeyList } from "./prompt-help";
-import { getMaxRenderLinesForRows, railRow } from "./prompt-layout";
+import { getMaxRenderLinesForRows } from "./prompt-layout";
 import {
 	type AskResponse,
 	type AskUIResult,
@@ -197,17 +197,11 @@ export class BatchAskComponent implements Component {
 
 		// The title and the footer are fixed; the answers take what is left and are
 		// cut from the end, so a short prompt still shows the first ones.
-		const budget = Math.max(1, this.reviewLineCap() - 3 - footerLines.length);
-		return [
-			railRow(theme, width),
-			theme.fg("dim", this.title),
-			...answerLines.slice(0, budget),
-			...footerLines,
-			railRow(theme, width),
-		];
+		const budget = Math.max(1, this.reviewLineCap() - 1 - footerLines.length);
+		return [theme.fg("dim", this.title), ...answerLines.slice(0, budget), ...footerLines];
 	}
 
-	/** Rows the review page may use, rails included. */
+	/** Rows the review page may use. */
 	private reviewLineCap(): number {
 		const rows = Number.isFinite(this.tui.terminal.rows) ? Math.floor(this.tui.terminal.rows) : 24;
 		// Inline prompts sit in Pi's fullscreen input dock, which clips anything

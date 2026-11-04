@@ -38,7 +38,7 @@ single-select-list.ts
 single-select-layout.ts
                     单选行渲染：行种类（option/description/helper/indicator）、折行与分页
 ask-prompt.ts       单问组件：模式状态机（select / freeform）、键分发、提交/取消、渲染编排
-prompt-layout.ts    纯布局：终端高度上限与 rail 行
+prompt-layout.ts    纯布局：终端高度上限
 prompt-help.ts      纯提示文本：一张键位表按模式拼出一行 dim 提示（含 formatKeyList）
 prompt-context.ts   context 面板：折叠判定、展开状态、切换键、文本
 batch-prompt.ts     批量组件：页头（页位 + ⇥ questions）、分页、review 页、跳过确认
@@ -102,9 +102,10 @@ execute(params, ctx)
   终端高度上限由 `prompt-layout.getMaxRenderLinesForRows` 计算；窄宽度与短终端必须仍能
   看见问题、context 摘要和一个选项。列表行自带 `kind`（option/description/helper/
   indicator），样式按种类决定，不嗅探行首字符。
-- **原生 rail，无外框**：prompt 与 review 页用两行满宽 `──`（`borderMuted`）夹住内容，
-  和 `pi-ext-ui` 的 tool group 完全一致：rail / 内容 / rail / 提示脚注。不画 `╭─╮` 圆角、
-  标题框或版本标签。rail 行由 `prompt-layout.railRow` 唯一产出。批量页的页位信息是 rail 内、问题之前的一行 dim 页头（`AskComponent.setBatchChrome`）。
+- **无外框、无 rail**：prompt 与 review 页不画 `──` 分隔线、`╭─╮` 圆角、标题框或版本标签。
+  prompt 直接以问题（批量页先一行 dim 页头 `AskComponent.setBatchChrome`）开始，以提示脚注结束；
+  review 页是 dim 标题、答案行、提示脚注。prompt 本身已经由 host 的输入区框住，再画一条满宽线
+  只会把这块空间挤掉，并和上下方的 host 边框重复。
 - **键位提示一处**：`prompt-help` 的键位表是唯一来源，按模式输出一行提示；键名用
   `↕`、`↵`、`⎋`、`␣`、`⇥`，可配置的 confirm/cancel 走 `keybindings`，提示随重映射变化。
 - **事件是通知**：事件只携带问题与响应种类，context 和实际答案留在工具结果里（#51）。

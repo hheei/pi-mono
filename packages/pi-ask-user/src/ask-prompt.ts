@@ -15,7 +15,6 @@ import { type AskMode, INLINE_CONTEXT_MAX_ROWS } from "./constants";
 import { MultiSelectList } from "./multi-select-list";
 import { PromptContextPane } from "./prompt-context";
 import { buildHelpText } from "./prompt-help";
-import { railRow } from "./prompt-layout";
 import { type AskUIResult, createFreeformResponse, createSelectionResponse } from "./response";
 import type { BatchQuestion } from "./schema";
 import { WrappedSingleSelectList } from "./single-select-list";
@@ -131,11 +130,9 @@ export class AskComponent extends Container {
 		const fullContextLines = this.contextPane.fullLines(width);
 		this.contextPane.setCollapsible(fullContextLines.length > INLINE_CONTEXT_MAX_ROWS);
 		return [
-			railRow(this.theme, width),
 			...this.buildPromptLines(width, fullContextLines),
 			"",
 			...this.modeContainer.render(width),
-			railRow(this.theme, width),
 			...this.helpLines(width),
 		];
 	}

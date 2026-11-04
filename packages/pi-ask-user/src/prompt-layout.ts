@@ -1,10 +1,4 @@
-import type { Theme } from "@earendil-works/pi-coding-agent";
 import { ASK_MAX_RENDER_LINES_RATIO, ASK_MIN_RENDER_LINES } from "./constants";
-
-/** The native separator row: one full-width `─` rule in `borderMuted`. */
-export function railRow(theme: Theme, width: number): string {
-	return theme.fg("borderMuted", "─".repeat(Math.max(0, width)));
-}
 
 /** Rows a prompt may draw for the terminal height: a ratio cap with a usable floor. */
 export function getMaxRenderLinesForRows(rows: number): number {
