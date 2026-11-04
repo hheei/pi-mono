@@ -248,6 +248,17 @@ function click(chat: Container, y: number, width = 80, x = 0) {
 	return chat.handleMouse(event);
 }
 
+/** Run with Pi-native block backgrounds on, restoring the fixture default afterwards. */
+function withBackgrounds<T>(run: () => T): T {
+	const previous = backgrounds;
+	backgrounds = true;
+	try {
+		return run();
+	} finally {
+		backgrounds = previous;
+	}
+}
+
 function show(chat: Container, width = 80): string {
 	// The group background fills every row to the terminal width; trailing padding is not content.
 	return chat
@@ -946,20 +957,22 @@ describe("two centralized host seams / original transcript projection", () => {
 	});
 
 	test("a finished block keeps its frame and its statistics footer", () => {
-		const f = setup();
-		f.chat.children = [assistant(["a", "b"]), f.row("a"), f.row("b")];
-		const rows = show(f.chat).trim().split("\n");
-		expect(rows[0]).toContain("▸ collapse views · — · 2 calls");
-		expect(rows).toContain(" ▸ read ×1");
-		// The group brackets its frame with two horizontal rails; the tail draws its own rows.
-		expect(rows.filter((row) => /^ ?─+$/.test(row))).toHaveLength(2);
-		const footer = rows.indexOf(" requests ×1 · ↑— · ↓—");
-		expect(footer).toBeGreaterThan(0);
-		// Exactly one blank row separates the block from the unit it keeps outside.
-		// One colored padding row closes the background, then the single uncolored separator.
-		expect(rows[footer + 1]).toBe("");
-		expect(rows[footer + 2]).toBe("");
-		expect(rows[footer + 3]).toContain("✓ read");
+		withBackgrounds(() => {
+			const f = setup();
+			f.chat.children = [assistant(["a", "b"]), f.row("a"), f.row("b")];
+			const rows = show(f.chat).trim().split("\n");
+			expect(rows[0]).toContain("▸ collapse views · — · 2 calls");
+			expect(rows).toContain(" ▸ read ×1");
+			// The group brackets its frame with two horizontal rails; the tail draws its own rows.
+			expect(rows.filter((row) => /^ ?─+$/.test(row))).toHaveLength(2);
+			const footer = rows.indexOf(" requests ×1 · ↑— · ↓—");
+			expect(footer).toBeGreaterThan(0);
+			// Only blank rows separate the block from the unit it keeps outside: the block's own
+			// padding row, then whatever surface the tail paints for itself.
+			const tail = rows.findIndex((row) => row.includes("✓ read"));
+			expect(tail).toBeGreaterThan(footer + 1);
+			expect(rows.slice(footer + 1, tail).every((row) => row.trim() === "")).toBe(true);
+		});
 	});
 
 	test("the footer is always statistics, and native content moves the tail into the block", () => {
@@ -1019,11 +1032,13 @@ describe("two centralized host seams / original transcript projection", () => {
 		const failed = f.row("b", "read");
 		failed.updateResult({ content: [{ type: "text", text: "boom" }], isError: true });
 		f.chat.children = [assistant(["a", "b"]), f.row("a", "grep"), failed];
-		const text = show(f.chat);
-		expect(text).toContain("✗ read");
-		expect(text).toContain("[toolTitle]grep[/]");
-		// The block's own rows carry the group background; the failed tail votes for the error token.
-		expect(text).toContain("[bg:toolErrorBg]");
+		withBackgrounds(() => {
+			const text = show(f.chat);
+			expect(text).toContain("✗ read");
+			expect(text).toContain("[toolTitle]grep[/]");
+			// The block's own rows carry the group background; a failed member votes for the error token.
+			expect(text).toContain("[bg:toolErrorBg]");
+		});
 
 		// Width safety is measured on real cells, so this half uses the token-free theme.
 		const plain = setup();
@@ -1545,15 +1560,17 @@ describe("two centralized host seams / original transcript projection", () => {
 		f.begin();
 		f.notice("hello");
 		f.chat.children.push(assistant(["a", "b"]), f.row("a"), f.row("b"));
-		const text = show(f.chat);
-		// Labels are readable text, secondary facts stay dim, and structure is its own token.
-		expect(text).toContain("[text]collapse views[/]");
-		// The group is a background block bracketed by its own rails, never by tool rails.
-		expect(text).toContain("[bg:toolSuccessBg]");
-		expect(text).toContain("[borderMuted]");
-		expect(text).toContain("[text]notice[/]");
-		expect(text).toContain("[dim]info ×1[/]");
-		expect(text).not.toContain("[muted]collapse views");
+		withBackgrounds(() => {
+			const text = show(f.chat);
+			// Labels are readable text, secondary facts stay dim, and structure is its own token.
+			expect(text).toContain("[text]collapse views[/]");
+			// The group is a background block bracketed by its own rails, never by tool rails.
+			expect(text).toContain("[bg:toolSuccessBg]");
+			expect(text).toContain("[borderMuted]");
+			expect(text).toContain("[text]notice[/]");
+			expect(text).toContain("[dim]info ×1[/]");
+			expect(text).not.toContain("[muted]collapse views");
+		});
 	});
 
 	test("the open category is the block's focus point", () => {
@@ -2090,62 +2107,49 @@ describe("two centralized host seams / original transcript projection", () => {
 		expect(show(f.chat)).toContain("requests ×8 · ↑8.0k · ↓800");
 	});
 
-	test("the group background follows the block's worst fact", () => {
-		const f = setup(true, tokens);
-		f.begin();
-		f.chat.children = [assistant(["a", "b"]), f.row("a"), f.row("b")];
-		expect(show(f.chat)).toContain("[bg:toolSuccessBg]");
-		const running = f.row("c", "read", "ok", false, false);
-		running.setArgsComplete();
-		running.markExecutionStarted();
-		f.chat.children = [assistant(["a", "b", "c"]), f.row("a"), f.row("b"), running];
-		expect(show(f.chat)).toContain("[bg:toolPendingBg]");
-		const failed = f.row("d", "read");
-		failed.updateResult({ content: [{ type: "text", text: "boom" }], isError: true });
-		f.chat.children = [assistant(["a", "b", "c", "d"]), f.row("a"), f.row("b"), running, failed];
-		expect(show(f.chat)).toContain("[bg:toolErrorBg]");
-	});
-
-	test("the surface states the last fact and drops five seconds after the block settles", () => {
-		vi.useFakeTimers();
-		let now = 0;
-		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
-		try {
+	test("the group background takes the block's error, not the last call's status", () => {
+		withBackgrounds(() => {
 			const f = setup(true, tokens);
 			f.begin();
 			const failed = f.row("a", "read");
 			failed.updateResult({ content: [{ type: "text", text: "boom" }], isError: true });
 			f.chat.children = [assistant(["a", "b"]), failed, f.row("b")];
-			// An earlier failure must not tint a block whose last fact is a success.
-			expect(show(f.chat)).toContain("[bg:toolSuccessBg]");
-			now = 5_001;
-			vi.advanceTimersByTime(5_001);
-			// The hold ends on the neutral surface, not on a hole in the block.
-			expect(show(f.chat)).toContain("[bg:toolPendingBg]");
+			// A later success does not paint over a failure the block already holds.
+			expect(show(f.chat)).toContain("[bg:toolErrorBg]");
 			expect(show(f.chat)).not.toContain("[bg:toolSuccessBg]");
-			expect(f.requestRender).toHaveBeenCalled();
-		} finally {
-			clock.mockRestore();
-			vi.useRealTimers();
-		}
+		});
 	});
 
-	test("a live member restarts the hold instead of keeping the old surface", () => {
+	test("a later call keeps the settled surface instead of restarting the hold", () => {
 		vi.useFakeTimers();
 		let now = 0;
 		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
 		try {
-			const f = setup(true, tokens);
-			f.begin();
-			f.chat.children = [assistant(["a", "b"]), f.row("a"), f.row("b")];
-			expect(show(f.chat)).toContain("[bg:toolSuccessBg]");
-			now = 6_000;
-			expect(show(f.chat)).toContain("[bg:toolPendingBg]");
-			const running = f.row("c", "read", "ok", false, false);
-			running.setArgsComplete();
-			running.markExecutionStarted();
-			f.chat.children = [assistant(["a", "b", "c"]), f.row("a"), f.row("b"), running];
-			expect(show(f.chat)).toContain("[bg:toolPendingBg]");
+			withBackgrounds(() => {
+				const f = setup(true, tokens);
+				f.begin();
+				// The same components keep the same block across renders, exactly as the host reuses
+				// its own rows.
+				const thinking = assistant(["a", "b"]);
+				const a = f.row("a");
+				const b = f.row("b");
+				f.chat.children = [thinking, a, b];
+				expect(show(f.chat)).toContain("[bg:toolSuccessBg]");
+				// A new call must not flip the block back to pending: that per-call flip is what read
+				// as flashing while one request ran several tools.
+				now = 1_000;
+				const running = f.row("c", "read", "ok", false, false);
+				running.setArgsComplete();
+				running.markExecutionStarted();
+				f.chat.children = [thinking, a, b, running];
+				expect(show(f.chat)).toContain("[bg:toolSuccessBg]");
+				// The hold counts from the block's first settle, so it still ends on time.
+				now = 5_001;
+				vi.advanceTimersByTime(5_001);
+				expect(show(f.chat)).toContain("[bg:toolPendingBg]");
+				expect(show(f.chat)).not.toContain("[bg:toolSuccessBg]");
+				expect(f.requestRender).toHaveBeenCalled();
+			});
 		} finally {
 			clock.mockRestore();
 			vi.useRealTimers();
@@ -2167,14 +2171,16 @@ describe("two centralized host seams / original transcript projection", () => {
 	});
 
 	test("a locally expanded category keeps the group background", () => {
-		const f = setup(true, tokens);
-		f.begin();
-		f.chat.children = [assistant(["a", "b"]), f.row("a"), f.row("b")];
-		clickRow(f.chat, "read");
-		const rows = show(f.chat).split("\n");
-		// Header, category, the opened tool's own rows, and the footer are one background block.
-		expect(rows.filter((row) => row.includes("[bg:toolSuccessBg]")).length).toBeGreaterThan(4);
-		expect(show(f.chat)).toContain("[bg:toolSuccessBg] [dim]requests");
+		withBackgrounds(() => {
+			const f = setup(true, tokens);
+			f.begin();
+			f.chat.children = [assistant(["a", "b"]), f.row("a"), f.row("b")];
+			clickRow(f.chat, "read");
+			const rows = show(f.chat).split("\n");
+			// Header, category, the opened tool's own rows, and the footer are one background block.
+			expect(rows.filter((row) => row.includes("[bg:toolSuccessBg]")).length).toBeGreaterThan(4);
+			expect(show(f.chat)).toContain("[bg:toolSuccessBg] [dim]requests");
+		});
 	});
 
 	test("the expanded block is transparent and keeps block backgrounds", () => {

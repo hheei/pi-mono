@@ -8,8 +8,13 @@ const theme = {
 	bold: (text: string) => text,
 } as Theme;
 
-function ui(): ExtensionUIContext {
-	return { theme, getToolsExpanded: () => false } as ExtensionUIContext;
+function ui(themeOverride: Theme = theme): ExtensionUIContext {
+	return { theme: themeOverride, getToolsExpanded: () => false } as ExtensionUIContext;
+}
+
+/** A theme that marks every background it paints, so a row states which surface owns it. */
+function markedTheme(): Theme {
+	return { ...theme, bg: (token: string, text: string) => `[${token}]${text}[/]` } as Theme;
 }
 
 function settledMember(): Member {
@@ -155,9 +160,9 @@ describe("ToolGroupView lifetime", () => {
 			type: "click",
 			button: "left",
 			x: 1,
-			y: 3,
+			y: 2,
 			screenX: 1,
-			screenY: 3,
+			screenY: 2,
 			width: 40,
 			height: 20,
 			shift: false,
@@ -178,7 +183,7 @@ describe("ToolGroupView lifetime", () => {
 		const group = new ToolGroupView(
 			ui(),
 			redraw,
-			() => false,
+			() => true,
 			() => 0,
 		);
 		group.update([settledMember()], undefined, [], undefined);
@@ -187,6 +192,59 @@ describe("ToolGroupView lifetime", () => {
 		expect(redraw).toHaveBeenCalledTimes(1);
 		expect(group.render(40)).toHaveLength(height);
 		group.dispose();
+	});
+
+	test("a transparent block owns no surface, so it never asks for a fade", () => {
+		vi.useFakeTimers();
+		const redraw = vi.fn();
+		const group = new ToolGroupView(
+			ui(),
+			redraw,
+			() => false,
+			() => 0,
+		);
+		group.update([settledMember()], undefined, [], undefined);
+		const rows = group.render(40);
+		vi.advanceTimersByTime(5_000);
+		expect(redraw).not.toHaveBeenCalled();
+		// No fill means no breathing rows either: the block is exactly its own rows.
+		const filled = new ToolGroupView(
+			ui(markedTheme()),
+			() => undefined,
+			() => true,
+			() => 0,
+		);
+		filled.update([settledMember()], undefined, [], undefined);
+		expect(filled.render(40)).toHaveLength(rows.length + 2);
+		filled.dispose();
+		group.dispose();
+	});
+
+	test("a later call keeps the settled surface instead of re-tinting the block", () => {
+		vi.useFakeTimers();
+		let now = 0;
+		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+		const group = new ToolGroupView(
+			ui(markedTheme()),
+			() => undefined,
+			() => true,
+			() => 0,
+		);
+		const settled = settledMember();
+		group.update([settled], undefined, [], undefined);
+		expect(group.render(40).join("\n")).toContain("[toolSuccessBg]");
+		// A call that starts later must not flip the block back to the neutral surface.
+		now = 1_000;
+		const live = { ...settledMember(), status: "running" as const };
+		group.update([settled, live], undefined, [], undefined);
+		expect(group.render(40).join("\n")).toContain("[toolSuccessBg]");
+		// The hold counts from the block's first settle, so it still ends on time.
+		now = 5_001;
+		vi.advanceTimersByTime(5_001);
+		expect(group.render(40).join("\n")).toContain("[toolPendingBg]");
+		group.dispose();
+		clock.mockRestore();
+		vi.useRealTimers();
 	});
 
 	test("dispose cancels the pending surface hold, and is idempotent", () => {
@@ -204,6 +262,53 @@ describe("ToolGroupView lifetime", () => {
 		group.dispose();
 		vi.advanceTimersByTime(5_000);
 		expect(redraw).not.toHaveBeenCalled();
+	});
+});
+
+describe("ToolGroupView expanded layout", () => {
+	test("the title keeps the surface and the totals, and the members stay transparent", () => {
+		const expanded = {
+			theme: markedTheme(),
+			getToolsExpanded: () => true,
+		} as ExtensionUIContext;
+		const group = new ToolGroupView(
+			expanded,
+			() => undefined,
+			() => true,
+			() => 0,
+		);
+		group.update([settledMember()], undefined, [{}], { startedAt: 0 });
+		const rows = group.render(120);
+		const title = rows.findIndex((row) => row.includes("collapse views"));
+		// The totals live in the title, so nothing trails the last member.
+		expect(rows[title]).toContain("requests ×1");
+		expect(rows.at(-1)).not.toContain("requests ×1");
+		// The title is its own filled surface: one breathing row above and below.
+		expect(rows[title - 1]).toContain("[toolSuccessBg]");
+		expect(rows[title + 1]).toContain("[toolSuccessBg]");
+		// One plain blank row separates the title from the first member.
+		expect(rows[title + 2]?.trim()).toBe("");
+		expect(rows[title + 2]).not.toContain("[toolSuccessBg]");
+		// The members below keep only the styling they draw themselves.
+		expect(rows.slice(title + 2).every((row) => !row.includes("[toolSuccessBg]"))).toBe(true);
+		group.dispose();
+	});
+
+	test("a transparent expanded title has no breathing rows but keeps the gap", () => {
+		const expanded = { theme, getToolsExpanded: () => true } as ExtensionUIContext;
+		const group = new ToolGroupView(
+			expanded,
+			() => undefined,
+			() => false,
+			() => 0,
+		);
+		group.update([settledMember()], undefined, [{}], { startedAt: 0 });
+		const rows = group.render(40);
+		const title = rows.findIndex((row) => row.includes("collapse views"));
+		expect(rows[title - 1]?.trim()).toBe("");
+		expect(rows[title + 1]?.trim()).toBe("");
+		expect(rows[title + 2]).toContain("row");
+		group.dispose();
 	});
 });
 

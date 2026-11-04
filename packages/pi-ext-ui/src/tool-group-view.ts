@@ -243,6 +243,14 @@ function thinkingPreview(text: string): { readonly head: string; readonly more: 
 	return { head, more: content !== head };
 }
 
+function isLiveMember(member: Member): boolean {
+	return member.status === "running" || member.status === "streaming";
+}
+
+function isFailedMember(member: Member): boolean {
+	return member.status === "error";
+}
+
 /**
  * The collapsed frame of one activity block.
  *
@@ -270,16 +278,21 @@ export class ToolGroupView extends Container {
 	#category: Category | undefined;
 	#item: Component | undefined;
 	#renderedExpanded = false;
-	#shell: "collapsed" | "raw" = "collapsed";
+	#shell: "collapsed" | "raw" | undefined;
 	/** When the block last became quiet; the surface hold counts from here. */
 	#settledAt: number | undefined;
 	#holdTimer: ReturnType<typeof setTimeout> | undefined;
 	#hits: Hit[] = [];
 	readonly #heading: Component;
 	readonly #body: Component;
-	// One extra colored row above and below: the block needs breathing room inside its background.
-	readonly #box = new Box(0, 1);
+	// One extra colored row above and below while the surface is filled: the block needs breathing
+	// room inside its background, and a transparent block has nothing to breathe in. `Box` has no
+	// vertical setter, so the box is rebuilt when the fill flips.
+	#box = new Box(0, 0);
+	#filled: boolean | undefined;
 	readonly #spacer = new Spacer(1);
+	/** The blank row between the expanded title and the first member. */
+	readonly #gap = new Spacer(1);
 
 	constructor(
 		ui: ExtensionUIContext,
@@ -302,11 +315,7 @@ export class ToolGroupView extends Container {
 			handleMouse: (event) => this.#hit(event),
 			invalidate() {},
 		};
-		// The group background covers the header, categories, and footer. Zero padding keeps the rows
-		// at the width they were laid out for; a tool's own outputPad must not be counted twice.
-		this.#box.addChild(this.#heading);
-		this.#box.addChild(this.#body);
-		this.children = [this.#spacer, this.#box];
+		this.#syncShell();
 	}
 
 	#toggleRaw(): void {
@@ -352,34 +361,21 @@ export class ToolGroupView extends Container {
 	}
 
 	/** The block's own last fact: the newest member that states a status, tail included. */
-	#lastStatus(): ToolStatusKind | undefined {
-		const block = this.#block();
-		for (let index = block.length - 1; index >= 0; index -= 1) {
-			const status = block[index]?.status;
-			if (status !== undefined) return status;
-		}
-		return undefined;
-	}
-
 	/**
-	 * The surface states the block's last fact, not its worst one, so one old failure cannot tint a
-	 * block forever. A settled block keeps that color for five seconds and then falls back to the
-	 * neutral surface, because a transcript full of settled blocks is a transcript to read, not a wall
-	 * of colored panels.
+	 * The surface states the block, decided once: pending until a call settles, then the settled color
+	 * for five seconds, then the neutral surface. Reading the last call's status instead re-tinted the
+	 * block on every call, which read as flashing while one request ran several tools.
 	 */
 	#surfaceToken(): "toolErrorBg" | "toolPendingBg" | "toolSuccessBg" {
-		const last = this.#lastStatus();
-		if (last === "running" || last === "streaming") {
-			this.#settledAt = undefined;
-			this.#stopHold();
-			return "toolPendingBg";
+		if (this.#settledAt === undefined) {
+			const stated = this.#block().filter((member) => member.status !== undefined);
+			if (stated.length === 0 || stated.some(isLiveMember)) return "toolPendingBg";
+			this.#settledAt = performance.now();
 		}
-		const now = performance.now();
-		this.#settledAt ??= now;
-		const held = now - this.#settledAt;
-		if (last === undefined || held >= SURFACE_HOLD_MS) return "toolPendingBg";
+		const held = performance.now() - this.#settledAt;
+		if (held >= SURFACE_HOLD_MS) return "toolPendingBg";
 		this.#hold(SURFACE_HOLD_MS - held);
-		return last === "error" ? "toolErrorBg" : "toolSuccessBg";
+		return this.#block().some(isFailedMember) ? "toolErrorBg" : "toolSuccessBg";
 	}
 
 	/** One repaint when the hold expires; nothing keeps ticking after that. */
@@ -833,8 +829,16 @@ export class ToolGroupView extends Container {
 		}
 		this.#renderedExpanded = this.#raw || globalExpanded;
 		const theme = this.#ui.theme;
+		// The fill and its breathing rows belong to one surface: a transparent block keeps neither, so
+		// turning tool backgrounds off really removes them instead of leaving blank rows behind.
+		const filled = this.#background();
+		if (this.#filled !== filled) {
+			this.#filled = filled;
+			this.#box = new Box(0, filled ? 1 : 0);
+			this.#shell = undefined;
+		}
 		this.#syncShell();
-		this.#box.setBgFn(backgroundFill(theme, this.#surfaceToken()));
+		this.#box.setBgFn(filled ? backgroundFill(theme, this.#surfaceToken()) : undefined);
 		const calls = this.#calls();
 		const elapsed =
 			this.#clock === undefined
@@ -844,6 +848,9 @@ export class ToolGroupView extends Container {
 			theme.fg("text", "collapse views"),
 			theme.fg("dim", elapsed),
 			theme.fg("dim", `${calls} ${calls === 1 ? "call" : "calls"}`),
+			// The expanded view has no frame to hold a footer, so its totals join the title instead of
+			// adding a row after the last member.
+			...(this.#renderedExpanded ? [this.#footerRow()] : []),
 		].join(theme.fg("dim", " · "));
 		const pad = Math.max(0, this.#outputPad());
 		this.#header.setText(
@@ -864,7 +871,15 @@ export class ToolGroupView extends Container {
 		const shell = this.#renderedExpanded ? "raw" : "collapsed";
 		if (this.#shell === shell) return;
 		this.#shell = shell;
+		// The title owns the surface in both shells. A collapsed frame keeps its body inside it; the
+		// expanded one leaves every member its own styling and separates the title from them by one
+		// blank row, so the block never tints the whole conversation.
+		this.#box.clear();
+		this.#box.addChild(this.#heading);
+		if (shell === "collapsed") this.#box.addChild(this.#body);
 		this.children =
-			shell === "raw" ? [this.#spacer, this.#heading, this.#body] : [this.#spacer, this.#box];
+			shell === "raw"
+				? [this.#spacer, this.#box, this.#gap, this.#body]
+				: [this.#spacer, this.#box];
 	}
 }
