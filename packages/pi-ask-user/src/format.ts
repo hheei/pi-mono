@@ -66,15 +66,17 @@ export function formatOptionMarkers(
 	indent = "",
 ): string {
 	const selectedTitles = new Set(response.selections);
-	let text = `\n${indent}${theme.fg("dim", "Options:")}`;
+	const lines: string[] = [`${indent}${theme.fg("dim", "Options:")}`];
 	for (const opt of options) {
 		const desc = opt.description ? ` \u2014 ${opt.description}` : "";
-		const marker = selectedTitles.has(opt.title)
-			? theme.fg("success", "\u25cf")
-			: theme.fg("dim", "\u25cb");
-		text += `\n${indent}  ${marker} ${theme.fg("dim", opt.title)}${theme.fg("dim", desc)}`;
+		const selected = selectedTitles.has(opt.title);
+		const marker = selected ? theme.fg("success", "\u25cf") : theme.fg("dim", "\u25cb");
+		const title = selected
+			? theme.fg("accent", theme.bold(opt.title))
+			: theme.fg("muted", opt.title);
+		lines.push(`${indent}  ${marker} ${title}${theme.fg("dim", desc)}`);
 	}
-	return text;
+	return lines.join("\n");
 }
 
 export function formatBatchResult(

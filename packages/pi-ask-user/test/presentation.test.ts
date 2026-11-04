@@ -79,7 +79,7 @@ describe("presentAskUser results", () => {
 			theme,
 			context({ isPartial: true }),
 		);
-		expect(presentation.summary).toBe("waiting for user input");
+		expect(presentation.summary).toBe("Q");
 		expect(presentation.status).toBe("running");
 		expect(presentation.replaceCallOnPartial).toBe(true);
 		expect(rowsOf(presentation)).toContain("Waiting for user input...");
@@ -110,23 +110,23 @@ describe("presentAskUser results", () => {
 			theme,
 			context(),
 		);
-		expect(presentation.summary).toBe("Blue");
+		expect(presentation.summary).toBe("Pick a color → Blue");
 		expect(presentation.status).toBe("ok");
 		expect(rowsOf(presentation)).toContain("● Blue");
 		expect(rowsOf(presentation)).toContain("○ Red");
-		expect(rowsOf(presentation)).toContain("Q: Pick a color");
+		expect(rowsOf(presentation)).toContain("Pick a color");
 		expect(presentation.copy?.primary).toBe("Blue");
 	});
 
 	test("cancelled questions say so instead of reporting an empty answer", () => {
 		const presentation = presentAskUser(
 			{ question: "Q" },
-			{ content: [], details: singleDetails({ response: null, cancelled: true }) },
+			{ content: [], details: singleDetails({ question: "Q", response: null, cancelled: true }) },
 			theme,
 			context(),
 		);
 		expect(presentation.status).toBe("warn");
-		expect(presentation.summary).toBe("cancelled");
+		expect(presentation.summary).toBe("Q → cancelled");
 		expect(rowsOf(presentation)).toContain("Cancelled");
 	});
 });
