@@ -21,6 +21,13 @@ describe("native subagent status", () => {
 		).toBe("agents x3");
 	});
 
+	test("formats with theme tokens: muted for agents, accent for count", () => {
+		const themed = { fg: (token: string, text: string) => `[${token}]${text}[/${token}]` };
+		expect(formatSubagentStatus([child({ id: "agent-1" })], themed)).toBe(
+			"[muted]agents[/muted] [accent]x1[/accent]",
+		);
+	});
+
 	test("removes the status on completion and cannot restore it after abort", () => {
 		const setStatus = vi.fn();
 		const controller = new AbortController();

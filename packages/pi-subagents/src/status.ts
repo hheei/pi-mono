@@ -19,7 +19,7 @@ export function formatSubagentStatus(
 	if (running.length === 0) return undefined;
 	const count = `x${running.length}`;
 	if (!theme) return `agents ${count}`;
-	return `${theme.fg("dim", "agents")} ${theme.fg("accent", count)}`;
+	return `${theme.fg("muted", "agents")} ${theme.fg("accent", count)}`;
 }
 
 /** Native status transport; no widget, timers or dependency on pi-status. */
