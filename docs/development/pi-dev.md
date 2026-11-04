@@ -14,6 +14,14 @@ pi-dev # 或 scripts/pi-dev
 ```
 
 Pi 参数直接追加，例如 `pi-dev --model <provider/model>`。
+
+启动器按自身路径定位仓库根，所以把它链到 `PATH` 后可以从任何目录调用，构建目标仍是本仓库：
+
+```bash
+ln -sfn "$PWD/scripts/pi-dev" ~/.local/bin/pi-dev
+```
+
+代价是它只代表这一个 checkout；切换 worktree 时重新指向新路径。
 启动器默认使用 `packages/pi-ext-tools/node_modules/@earendil-works/pi-coding-agent/dist/cli.js`，即仓库锁定的未捆绑 Pi host。它会加载 pnpm 管理的 `pi-tui` 补丁；全局 Pi 和 `dist/bundle/cli.js` 内嵌的 TUI 不会使用该补丁，因此不再作为自动回退。
 
 启动前会打印实际 CLI 路径。`PI_CLI` 仍可显式指定其他入口，同时提示仓库补丁不保证生效；路径不存在时直接报错，不静默改用其他 host。此选择不修改模型、供应商或 Pi 配置。
