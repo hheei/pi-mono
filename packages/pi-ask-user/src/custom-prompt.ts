@@ -5,7 +5,7 @@ import type {
 	Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { openTuiSurface } from "@hheei/pi-ext-core";
+import { isRecord, openTuiSurface } from "@hheei/pi-ext-core";
 
 export interface CustomPromptRequest<T> {
 	signal?: AbortSignal | undefined;
@@ -38,9 +38,30 @@ export async function runCustomPrompt<T>(
 	if (signal?.aborted) return null;
 	signal?.addEventListener("abort", abortLocally, { once: true });
 	const timer = deadline === undefined ? undefined : setTimeout(abortLocally, timeout);
+
+	if (process.stdout.isTTY) {
+		process.stdout.write("\x07");
+	}
+
+	let externalAnswer: T | null | undefined;
+	let unsubscribeAnswer: (() => void) | undefined;
+	if (pi.events && typeof pi.events.on === "function") {
+		unsubscribeAnswer = pi.events.on("pi-ask-user:answer", (data: unknown) => {
+			if (isRecord(data)) {
+				if (data.cancel === true) {
+					local.abort();
+				} else if (data.response !== undefined) {
+					externalAnswer = data.response as T;
+					local.abort();
+				}
+			}
+		});
+	}
 	try {
 		if (ctx.mode !== "tui" || createComponent === undefined) {
-			return await request.fallback(local.signal, deadline);
+			const res = await request.fallback(local.signal, deadline);
+			if (externalAnswer !== undefined) return externalAnswer;
+			return res;
 		}
 		const result = await openTuiSurface<T | null>(pi, ctx, {
 			hostId: "ask-user",
@@ -49,9 +70,11 @@ export async function runCustomPrompt<T>(
 			create: ({ tui, theme, keybindings, close }) =>
 				createComponent(tui, theme, keybindings, close),
 		});
+		if (externalAnswer !== undefined) return externalAnswer;
 		return result.status === "closed" ? result.value : null;
 	} finally {
 		if (timer !== undefined) clearTimeout(timer);
 		signal?.removeEventListener("abort", abortLocally);
+		unsubscribeAnswer?.();
 	}
 }

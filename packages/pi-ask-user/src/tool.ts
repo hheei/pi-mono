@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { BATCH_MAX_QUESTIONS, BATCH_MIN_QUESTIONS } from "./constants";
 import { executeBatch, executeSingle } from "./execute";
 import { createAskUserRenderers } from "./presentation";
-import type { AskParams } from "./schema";
+import { type AskParams, prepareAskArguments } from "./schema";
 
 const ASK_DESCRIPTION =
 	"Ask the user a question with optional multiple-choice answers, or 2-4 independent questions in one prompt. The turn blocks until the user answers.";
@@ -55,6 +55,33 @@ const questionEntrySchema = Type.Object({
 	),
 });
 
+const askToolParametersSchema = Type.Object({
+	question: Type.Optional(Type.String({ description: ASK_PARAMETER_DESCRIPTIONS.question })),
+	questions: Type.Optional(
+		Type.Array(questionEntrySchema, {
+			minItems: BATCH_MIN_QUESTIONS,
+			maxItems: BATCH_MAX_QUESTIONS,
+			description: ASK_PARAMETER_DESCRIPTIONS.questions,
+		}),
+	),
+	context: Type.Optional(Type.String({ description: ASK_PARAMETER_DESCRIPTIONS.context })),
+	options: Type.Optional(
+		Type.Array(optionSchema, { description: ASK_PARAMETER_DESCRIPTIONS.options }),
+	),
+	allowMultiple: Type.Optional(
+		Type.Boolean({ description: ASK_PARAMETER_DESCRIPTIONS.allowMultiple }),
+	),
+	allowFreeform: Type.Optional(
+		Type.Boolean({ description: ASK_PARAMETER_DESCRIPTIONS.allowFreeform }),
+	),
+	timeout_ms: Type.Optional(
+		Type.Integer({
+			minimum: 1,
+			description: ASK_PARAMETER_DESCRIPTIONS.timeoutMs,
+		}),
+	),
+});
+
 export function registerAskUserTool(pi: ExtensionAPI) {
 	pi.registerTool({
 		// Asks the user, so only the model may call it; codemode scripts cannot open prompts.
@@ -68,32 +95,9 @@ export function registerAskUserTool(pi: ExtensionAPI) {
 		// so the model cannot batch ask_user with bash/edit/write and let those run
 		// (potentially with side effects) before the user sees the prompt.
 		executionMode: "sequential",
-		parameters: Type.Object({
-			question: Type.Optional(Type.String({ description: ASK_PARAMETER_DESCRIPTIONS.question })),
-			questions: Type.Optional(
-				Type.Array(questionEntrySchema, {
-					minItems: BATCH_MIN_QUESTIONS,
-					maxItems: BATCH_MAX_QUESTIONS,
-					description: ASK_PARAMETER_DESCRIPTIONS.questions,
-				}),
-			),
-			context: Type.Optional(Type.String({ description: ASK_PARAMETER_DESCRIPTIONS.context })),
-			options: Type.Optional(
-				Type.Array(optionSchema, { description: ASK_PARAMETER_DESCRIPTIONS.options }),
-			),
-			allowMultiple: Type.Optional(
-				Type.Boolean({ description: ASK_PARAMETER_DESCRIPTIONS.allowMultiple }),
-			),
-			allowFreeform: Type.Optional(
-				Type.Boolean({ description: ASK_PARAMETER_DESCRIPTIONS.allowFreeform }),
-			),
-			timeout_ms: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					description: ASK_PARAMETER_DESCRIPTIONS.timeoutMs,
-				}),
-			),
-		}),
+		prepareArguments: (args: unknown) =>
+			prepareAskArguments(args) as Static<typeof askToolParametersSchema>,
+		parameters: askToolParametersSchema,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const ask = params as AskParams;

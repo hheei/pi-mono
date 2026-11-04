@@ -4,6 +4,7 @@ import {
 	createKeybindings,
 	createTheme,
 	customUI,
+	emitEvent,
 	emittedEvents,
 	isolateAgentDir,
 	setupTool,
@@ -53,6 +54,54 @@ describe("issue #51 event payload redaction", () => {
 		expect(emittedEvents.filter((event) => event.name === "ask:cancelled")).toEqual([
 			{ name: "ask:cancelled", payload: { question: "Pick" } },
 		]);
+	});
+
+	test("emits pi-ask-user:blocked active:true on prompt open and active:false on close", async () => {
+		const tool = await setupTool();
+		await answerFreeform(tool);
+
+		const blockedEvents = emittedEvents.filter((event) => event.name === "pi-ask-user:blocked");
+		expect(blockedEvents).toHaveLength(2);
+		expect(blockedEvents[0]?.payload).toEqual({ active: true, question: "Why?" });
+		expect(blockedEvents[1]?.payload).toEqual({ active: false });
+	});
+
+	test("resolves when pi-ask-user:answer event provides external response", async () => {
+		const tool = await setupTool();
+		const execution = tool.execute(
+			"tool-call-id",
+			{ question: "Choose one", options: ["A", "B"] },
+			undefined,
+			undefined,
+			{
+				hasUI: true,
+				mode: "tui",
+				ui: {
+					custom: customUI(async (factory: any) => {
+						let finish: (() => void) | undefined;
+						const pending = new Promise<void>((resolve) => {
+							finish = resolve;
+						});
+						factory(
+							{ requestRender() {}, terminal: { rows: 24 } },
+							createTheme(),
+							createKeybindings(),
+							() => {
+								finish?.();
+							},
+						);
+						emitEvent("pi-ask-user:answer", {
+							response: { kind: "selection", selections: ["B"] },
+						});
+						return pending;
+					}),
+				},
+			},
+		);
+
+		const result = await execution;
+		expect(result.details.response).toEqual({ kind: "selection", selections: ["B"] });
+		expect(result.details.cancelled).toBe(false);
 	});
 });
 

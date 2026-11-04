@@ -36,20 +36,38 @@ export interface BatchQuestion {
 // the model has to guess. See issue #22.
 const OPTION_TITLE_KEYS = ["title", "label", "text", "value", "name", "option"] as const;
 
+export const RESERVED_OPTION_TITLES = new Set(["other", "type something.", "next"]);
+
+export function normalizeLineTerminators(text: string): string {
+	return text.replace(/\r\n/g, "\n").replace(/\r/g, "");
+}
+
 export function coerceOption(option: unknown): QuestionOption | null {
 	if (typeof option === "string" || typeof option === "number" || typeof option === "boolean") {
-		const title = String(option).trim();
+		const title = normalizeLineTerminators(String(option)).trim();
+		if (RESERVED_OPTION_TITLES.has(title.toLowerCase())) {
+			throw new Error(
+				`Option title "${title}" is reserved by ask_user. To allow custom user input, use allowFreeform: true instead.`,
+			);
+		}
 		return title ? { title } : null;
 	}
 	if (isRecord(option)) {
 		for (const key of OPTION_TITLE_KEYS) {
 			const value = option[key];
-			if (typeof value === "string" && value.trim()) {
+			if (typeof value === "string") {
+				const title = normalizeLineTerminators(value).trim();
+				if (!title) continue;
+				if (RESERVED_OPTION_TITLES.has(title.toLowerCase())) {
+					throw new Error(
+						`Option title "${title}" is reserved by ask_user. To allow custom user input, use allowFreeform: true instead.`,
+					);
+				}
 				const description =
 					typeof option.description === "string" && option.description.trim()
-						? option.description
+						? normalizeLineTerminators(option.description).trim()
 						: undefined;
-				return description ? { title: value.trim(), description } : { title: value.trim() };
+				return description ? { title, description } : { title };
 			}
 		}
 	}
@@ -68,6 +86,46 @@ export function malformedOptionsError(count: number, label?: string): Error {
 			`Each option must be a plain string or an object like { "title": "Short label", "description": "Optional detail" }. ` +
 			`Call ask_user again with corrected options.`,
 	);
+}
+
+export function validateOptionUniqueness(options: QuestionOption[], label?: string): void {
+	const seen = new Set<string>();
+	for (const opt of options) {
+		const key = opt.title.toLowerCase();
+		if (seen.has(key)) {
+			throw new Error(
+				`Option title "${opt.title}"${label ? ` in ${label}` : ""} is duplicated. Each option must have a unique title.`,
+			);
+		}
+		seen.add(key);
+	}
+}
+
+export function prepareAskArguments(raw: unknown): Record<string, unknown> {
+	if (typeof raw === "string") {
+		try {
+			const parsed = JSON.parse(raw);
+			if (isRecord(parsed)) return parsed;
+		} catch {
+			// Not JSON
+		}
+		return {};
+	}
+	if (!isRecord(raw)) return {};
+	const copy: Record<string, unknown> = { ...raw };
+	if (typeof copy.questions === "string") {
+		try {
+			const parsed = JSON.parse(copy.questions);
+			if (Array.isArray(parsed)) copy.questions = parsed;
+		} catch {}
+	}
+	if (typeof copy.options === "string") {
+		try {
+			const parsed = JSON.parse(copy.options);
+			if (Array.isArray(parsed)) copy.options = parsed;
+		} catch {}
+	}
+	return copy;
 }
 
 /** A top-level question sent with questions is the batch's heading, not another question (#80). */
@@ -105,7 +163,8 @@ export function normalizeBatchQuestions(params: AskParams): BatchQuestion[] {
 	const seen = new Set<string>();
 	return questions.map((entry, index) => {
 		const label = `questions[${index}]`;
-		const question = typeof entry?.question === "string" ? entry.question.trim() : "";
+		const question =
+			typeof entry?.question === "string" ? normalizeLineTerminators(entry.question).trim() : "";
 		if (!question) throw new Error(`${label}.question must be a non-empty string.`);
 		const key = question.toLowerCase();
 		if (seen.has(key)) {
@@ -121,10 +180,14 @@ export function normalizeBatchQuestions(params: AskParams): BatchQuestion[] {
 		if (rawOptions.length > 0 && options.length === 0) {
 			throw malformedOptionsError(rawOptions.length, label);
 		}
+		validateOptionUniqueness(options, label);
 
 		return {
 			question,
-			context: typeof entry.context === "string" ? entry.context.trim() || undefined : undefined,
+			context:
+				typeof entry.context === "string"
+					? normalizeLineTerminators(entry.context).trim() || undefined
+					: undefined,
 			options,
 			allowMultiple: entry.allowMultiple ?? false,
 			allowFreeform: entry.allowFreeform ?? true,

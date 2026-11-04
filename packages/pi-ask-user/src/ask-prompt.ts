@@ -12,6 +12,7 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { type AskMode, INLINE_CONTEXT_MAX_ROWS } from "./constants";
+import { editWithExternalEditor } from "./external-editor";
 import { MultiSelectList } from "./multi-select-list";
 import { PromptContextPane } from "./prompt-context";
 import { buildHelpText } from "./prompt-help";
@@ -269,6 +270,19 @@ export class AskComponent extends Container {
 			return;
 		}
 		if (this.mode === "freeform") {
+			if (matchesKey(data, Key.ctrl("g"))) {
+				const editor = this.ensureEditor();
+				void editWithExternalEditor(this.tui, editor.getText())
+					.then((text) => {
+						editor.setText(text);
+						this.tui.requestRender();
+					})
+					.catch(() => {
+						this.tui.requestRender();
+					});
+				return;
+			}
+
 			if (matchesKey(data, Key.escape)) {
 				// Without options there is no list to go back to, so esc cancels.
 				if (this.prompt.options.length === 0) {

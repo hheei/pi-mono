@@ -81,6 +81,11 @@ export class MultiSelectList implements Component {
 				this.toggle(digit - 1);
 				this.rows.selected = Math.min(digit - 1, count - 1);
 				this.invalidate();
+				return;
+			}
+			if (this.rows.allowFreeform && digit === optionCount + 1) {
+				this.activate();
+				return;
 			}
 			return;
 		}

@@ -57,6 +57,7 @@ export function buildHelpText(input: HelpHintInput): string {
 			: [
 					[binding("tui.input.submit"), "submit"],
 					[binding("tui.input.newLine"), "newline"],
+					["ctrl+g", "editor"],
 					[
 						input.hasOptions ? "⎋" : binding("tui.select.cancel"),
 						input.hasOptions ? "back" : "cancel",

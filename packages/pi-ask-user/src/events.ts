@@ -8,6 +8,9 @@ export interface AskEventSubject {
 	options: QuestionOption[];
 }
 
+export const ASK_USER_BLOCKED_EVENT = "pi-ask-user:blocked" as const;
+export const ASK_USER_ANSWER_EVENT = "pi-ask-user:answer" as const;
+
 /** Position of a question inside a `questions` batch, attached to its ask:* events. */
 interface BatchPosition {
 	index: number;
@@ -32,6 +35,12 @@ export function createAskEventEmitter(pi: ExtensionAPI) {
 			pi.events.emit("ask:cancelled", {
 				question: subject.question,
 				...(batch ? { batch } : {}),
+			});
+		},
+		blocked(active: boolean, details?: { question?: string }): void {
+			pi.events.emit(ASK_USER_BLOCKED_EVENT, {
+				active,
+				...(details ? details : {}),
 			});
 		},
 	};

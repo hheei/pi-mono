@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { normalizeLineTerminators, prepareAskArguments } from "../src/schema";
 import { customUI, isolateAgentDir, rejectedError, setupTool } from "./fixtures/harness";
 
 vi.mock("@earendil-works/pi-coding-agent", async () =>
@@ -130,5 +131,50 @@ describe("issue #22 option normalization", () => {
 		expect(error.message).toContain("option(s) were malformed");
 		expect(error.message).toContain('{ "title": "Short label", "description": "Optional detail" }');
 		expect(calls).toBe(0);
+	});
+
+	test("un-double-encodes stringified JSON parameters", () => {
+		const raw = {
+			question: "Which database?",
+			options: '[{"title": "Postgres"}, {"title": "SQLite"}]',
+			questions: '[{"question": "Q1?"}]',
+		};
+		const prepared = prepareAskArguments(raw) as any;
+		expect(Array.isArray(prepared.options)).toBe(true);
+		expect(prepared.options).toEqual([{ title: "Postgres" }, { title: "SQLite" }]);
+		expect(Array.isArray(prepared.questions)).toBe(true);
+	});
+
+	test("normalizes lone carriage returns and CRLF line terminators", () => {
+		expect(normalizeLineTerminators("hello\r\nworld")).toBe("hello\nworld");
+		expect(normalizeLineTerminators("hello\rworld")).toBe("helloworld");
+	});
+
+	test("rejects reserved option titles like Other, Next, Type something.", async () => {
+		const tool = await setupTool();
+		const error = await rejectedError(
+			tool.execute(
+				"tool-call-id",
+				{ question: "Pick", options: ["A", "Other"] },
+				undefined,
+				undefined,
+				{ hasUI: true, mode: "tui", ui: {} } as any,
+			),
+		);
+		expect(error.message).toContain('Option title "Other" is reserved');
+	});
+
+	test("rejects duplicate option titles within the same question", async () => {
+		const tool = await setupTool();
+		const error = await rejectedError(
+			tool.execute(
+				"tool-call-id",
+				{ question: "Pick", options: ["Option A", "option a"] },
+				undefined,
+				undefined,
+				{ hasUI: true, mode: "tui", ui: {} } as any,
+			),
+		);
+		expect(error.message).toContain('Option title "option a" is duplicated');
 	});
 });

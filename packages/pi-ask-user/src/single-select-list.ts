@@ -95,10 +95,16 @@ export class WrappedSingleSelectList implements Component {
 		}
 
 		const digit = digitKey(data);
-		if (digit !== null && digit <= this.options.length) {
-			this.rows.selected = digit - 1;
-			this.invalidate();
-			return;
+		if (digit !== null) {
+			if (digit <= this.options.length) {
+				this.rows.selected = digit - 1;
+				this.invalidate();
+				return;
+			}
+			if (this.rows.allowFreeform && digit === this.options.length + 1) {
+				this.onEnterFreeform?.();
+				return;
+			}
 		}
 
 		if (this.keybindings.matches(data, "tui.select.confirm") && count > 0) {

@@ -6,6 +6,14 @@ import { afterAll, beforeAll, onTestFinished } from "vitest";
 
 /** Events the extension emitted through `pi.events`, reset by every `setupTool` call. */
 export let emittedEvents: Array<{ name: string; payload: any }> = [];
+let activeListeners = new Map<string, Set<(payload: any) => void>>();
+
+export function emitEvent(name: string, payload: any): void {
+	emittedEvents.push({ name, payload });
+	for (const listener of activeListeners.get(name) ?? []) {
+		listener(payload);
+	}
+}
 
 export type RegisteredTool = {
 	/** Set by the extension so the host runs the prompt before other tools in the turn. */
@@ -113,6 +121,7 @@ export async function setupTool(): Promise<RegisteredTool> {
 	const { default: askUserExtension } = await import("../../src/index");
 	let registeredTool: RegisteredTool | undefined;
 	emittedEvents = [];
+	activeListeners = new Map();
 	const pi = {
 		registerTool(tool: RegisteredTool) {
 			registeredTool = tool;
@@ -120,7 +129,16 @@ export async function setupTool(): Promise<RegisteredTool> {
 		on() {},
 		events: {
 			emit(name: string, payload: any) {
-				emittedEvents.push({ name, payload });
+				emitEvent(name, payload);
+			},
+			on(name: string, listener: (payload: any) => void) {
+				const set = activeListeners.get(name) ?? new Set();
+				set.add(listener);
+				activeListeners.set(name, set);
+				return () => {
+					const current = activeListeners.get(name);
+					if (current) current.delete(listener);
+				};
 			},
 		},
 	};

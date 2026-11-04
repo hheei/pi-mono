@@ -25,6 +25,8 @@ import {
 	coerceOptions,
 	malformedOptionsError,
 	normalizeBatchQuestions,
+	normalizeLineTerminators,
+	validateOptionUniqueness,
 } from "./schema";
 
 /** Host text dialog for a prompt without options; shares the caller's deadline and abort. */
@@ -75,8 +77,14 @@ export async function executeSingle(
 	onUpdate: AgentToolUpdateCallback<AskToolDetails> | undefined,
 	ctx: ExtensionContext,
 ): Promise<AgentToolResult<AskToolDetails>> {
-	const question = params.question;
-	if (typeof question !== "string") {
+	const rawQuestion = params.question;
+	if (typeof rawQuestion !== "string") {
+		throw new Error(
+			"ask_user needs question (one focused question) or questions (2-4 independent questions).",
+		);
+	}
+	const question = normalizeLineTerminators(rawQuestion).trim();
+	if (!question) {
 		throw new Error(
 			"ask_user needs question (one focused question) or questions (2-4 independent questions).",
 		);
@@ -89,12 +97,15 @@ export async function executeSingle(
 		};
 	}
 
-	const context = params.context?.trim() || undefined;
+	const context = params.context
+		? normalizeLineTerminators(params.context).trim() || undefined
+		: undefined;
 	const rawOptions = params.options ?? [];
 	const options = coerceOptions(rawOptions);
 	if (rawOptions.length > 0 && options.length === 0) {
 		throw malformedOptionsError(rawOptions.length);
 	}
+	validateOptionUniqueness(options);
 	const prompt: BatchQuestion = {
 		question,
 		context,
@@ -124,28 +135,34 @@ export async function executeSingle(
 		});
 	}
 
-	const response = await runInteractive<AskResponse>(pi, ctx, {
-		signal,
-		timeout: params.timeout_ms,
-		createComponent:
-			options.length === 0
-				? undefined
-				: (tui, theme, keybindings, complete) =>
-						new AskComponent(prompt, tui, theme, keybindings, complete),
-		fallback: (fallbackSignal, deadline) =>
-			options.length === 0
-				? askForText(ctx, question, context, fallbackSignal, deadline)
-				: askViaDialogs(
-						ctx.ui,
-						question,
-						context,
-						options,
-						prompt.allowMultiple,
-						prompt.allowFreeform,
-						{ signal: fallbackSignal },
-						deadline,
-					),
-	});
+	events.blocked(true, { question });
+	let response: AskResponse | null = null;
+	try {
+		response = await runInteractive<AskResponse>(pi, ctx, {
+			signal,
+			timeout: params.timeout_ms,
+			createComponent:
+				options.length === 0
+					? undefined
+					: (tui, theme, keybindings, complete) =>
+							new AskComponent(prompt, tui, theme, keybindings, complete),
+			fallback: (fallbackSignal, deadline) =>
+				options.length === 0
+					? askForText(ctx, question, context, fallbackSignal, deadline)
+					: askViaDialogs(
+							ctx.ui,
+							question,
+							context,
+							options,
+							prompt.allowMultiple,
+							prompt.allowFreeform,
+							{ signal: fallbackSignal },
+							deadline,
+						),
+		});
+	} finally {
+		events.blocked(false);
+	}
 
 	// A caller abort that lands while the prompt resolves still cancels the answer.
 	if (response === null || signal?.aborted) {
@@ -203,14 +220,21 @@ export async function executeBatch(
 		details: details([], false),
 	});
 
-	const answers = await runInteractive<BatchAnswer[]>(pi, ctx, {
-		signal,
-		timeout: params.timeout_ms,
-		createComponent: (tui, theme, keybindings, complete) =>
-			new BatchAskComponent(questions, tui, theme, keybindings, complete, heading),
-		fallback: (fallbackSignal, deadline) =>
-			askBatchViaDialogs(ctx.ui, questions, fallbackSignal, deadline, heading),
-	});
+	const batchQuestion = heading ?? questions[0]?.question;
+	events.blocked(true, batchQuestion ? { question: batchQuestion } : undefined);
+	let answers: BatchAnswer[] | null = null;
+	try {
+		answers = await runInteractive<BatchAnswer[]>(pi, ctx, {
+			signal,
+			timeout: params.timeout_ms,
+			createComponent: (tui, theme, keybindings, complete) =>
+				new BatchAskComponent(questions, tui, theme, keybindings, complete, heading),
+			fallback: (fallbackSignal, deadline) =>
+				askBatchViaDialogs(ctx.ui, questions, fallbackSignal, deadline, heading),
+		});
+	} finally {
+		events.blocked(false);
+	}
 
 	if (answers === null || signal?.aborted) {
 		subjects.forEach((subject, index) => {

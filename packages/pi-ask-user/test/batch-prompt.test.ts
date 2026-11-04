@@ -251,7 +251,7 @@ test("records each page's answer and publishes nothing until the review page sub
 			text: "User answered 2 of 2 questions:\n1. Which database? → Postgres\n2. Anything else? → No",
 		},
 	]);
-	expect(emittedEvents).toEqual([
+	expect(emittedEvents.filter((event) => event.name.startsWith("ask:"))).toEqual([
 		{
 			name: "ask:answered",
 			payload: {
@@ -413,6 +413,8 @@ test("keeps every answer inside the row cap on a short overlay review", async ()
 	expect(frame.length).toBeLessThanOrEqual(6);
 	expect(frame.join("\n")).toContain("1. First?");
 	expect(frame.join("\n")).toContain("submit");
+	press(state.component, "escape");
+	await _execution;
 });
 
 for (const outcome of [
