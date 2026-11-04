@@ -10,6 +10,7 @@ export interface StateSnapshot {
 export interface TranscriptFacts {
 	readonly usage: UsageSummary;
 	readonly summary?: string;
+	readonly resultText?: string;
 	readonly stopReason?: string;
 	readonly interrupted?: string;
 	readonly containsInput: boolean;
@@ -110,16 +111,20 @@ function add(total: UsageSummary, next: Omit<UsageSummary, "turns">): UsageSumma
 		turns: total.turns + 1,
 	};
 }
-export function summarizeCurrentBranch(entries: readonly unknown[]): string | undefined {
+export function lastAssistantText(entries: readonly unknown[]): string | undefined {
 	for (let index = entries.length - 1; index >= 0; index -= 1) {
 		const entry = entries[index];
 		if (entry === undefined) continue;
 		const item = assistant(entry);
 		if (item === undefined || !completed(item.message)) continue;
 		const value = text(item.message);
-		if (value !== undefined) return activitySummary(value);
+		if (value !== undefined) return value;
 	}
 	return undefined;
+}
+export function summarizeCurrentBranch(entries: readonly unknown[]): string | undefined {
+	const value = lastAssistantText(entries);
+	return value === undefined ? undefined : activitySummary(value);
 }
 export function aggregateUsage(entries: readonly unknown[]): UsageSummary {
 	let total = EMPTY_USAGE;
@@ -175,7 +180,8 @@ export function transcriptFacts(
 	expectedInput?: string,
 ): TranscriptFacts {
 	const last = lastCompletedAssistant(entries);
-	const summary = summarizeCurrentBranch(entries);
+	const resultText = lastAssistantText(entries);
+	const summary = resultText === undefined ? undefined : activitySummary(resultText);
 	const stopReason = typeof last?.stopReason === "string" ? last.stopReason : undefined;
 	const interrupted = last === undefined ? undefined : diagnostic(last);
 	const contextTokens = lastAssistantContextTokens(last);
@@ -188,6 +194,7 @@ export function transcriptFacts(
 		});
 	return {
 		usage: aggregateUsage(entries),
+		...(resultText === undefined ? {} : { resultText }),
 		...(summary === undefined ? {} : { summary }),
 		...(stopReason === undefined ? {} : { stopReason }),
 		...(interrupted === undefined ? {} : { interrupted }),
@@ -222,6 +229,7 @@ export function parseTranscriptFacts(value: unknown): TranscriptFacts | undefine
 	) {
 		return undefined;
 	}
+	const resultText = typeof value.resultText === "string" ? value.resultText : undefined;
 	const summary = typeof value.summary === "string" ? activitySummary(value.summary) : undefined;
 	const stopReason = typeof value.stopReason === "string" ? value.stopReason : undefined;
 	const interrupted = typeof value.interrupted === "string" ? value.interrupted : undefined;
@@ -235,6 +243,7 @@ export function parseTranscriptFacts(value: unknown): TranscriptFacts | undefine
 			costUsd,
 			turns,
 		},
+		...(resultText === undefined ? {} : { resultText }),
 		...(summary === undefined ? {} : { summary }),
 		...(stopReason === undefined ? {} : { stopReason }),
 		...(interrupted === undefined ? {} : { interrupted }),

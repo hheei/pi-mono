@@ -1,6 +1,6 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { ThemeLike } from "@hheei/pi-ext-core";
-import { type PublicSubagent, toVisualSubagentState, VISUAL_SUBAGENT_GLYPH } from "./domain.js";
+import { type PublicSubagent, toVisualSubagentState } from "./domain.js";
 
 export const SUBAGENT_STATUS_KEY = "pi-subagents";
 
@@ -11,17 +11,15 @@ export function formatSubagentId(id: string): string {
 
 export function formatSubagentStatus(
 	children: readonly PublicSubagent[],
-	theme: ThemeLike,
+	theme?: ThemeLike,
 ): string | undefined {
 	const running = children.filter(
 		(child) => toVisualSubagentState(child.state, child.interrupted) === "running",
 	);
 	if (running.length === 0) return undefined;
-	return (
-		"🤖 " +
-		theme.fg("accent", VISUAL_SUBAGENT_GLYPH.running) +
-		running.map((child) => theme.fg("dim", formatSubagentId(child.id))).join(" ")
-	);
+	const count = `x${running.length}`;
+	if (!theme) return `agents ${count}`;
+	return `${theme.fg("dim", "agents")} ${theme.fg("accent", count)}`;
 }
 
 /** Native status transport; no widget, timers or dependency on pi-status. */

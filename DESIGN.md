@@ -201,7 +201,7 @@ thinking 项每项只有一行：约 20 个 grapheme 的预览（`▎` 导轨）
 
 ### Editor-Adjacent UI
 
-- 父会话的子代理状态使用 Pi 原生 `setStatus`；`pi-status` 将运行 glyph 与正在运行的 agent 编号放在第二行右侧，位于 TODO 前，两段以 ` ‧ ` 分隔，例如 `🤖 󰪠#3f9a1c #0beef1 #a1b2c3 ‧ <TODO>`。任一段缺席时不保留分隔符；没有运行中的 child 时移除 agent 段，不占额外 Widget 行。窄屏沿用 Footer 的 ANSI/单元格宽度安全裁剪。
+- 父会话的子代理状态使用 Pi 原生 `setStatus`；`pi-status` 将运行中的子代理数量以 `agents xN`（如 `agents x3`）放在第二行右侧，位于 TODO 前，两段以 ` ‧ ` 分隔，例如 `agents x3 ‧ <TODO>`。任一段缺席时不保留分隔符；没有运行中的 child 时移除 agent 段，不占额外 Widget 行。窄屏沿用 Footer 的 ANSI/单元格宽度安全裁剪。
 - 子代理已确认的完成、错误或阻塞报告通过原生 `subagent-info` custom entry 一次性显示，默认仅显示状态 glyph、编号、agent 名称和结果状态，展开查看完整报告。模型仍通过隐藏的 `subagent-report` 接收原有自动交付；交互 info 不进入模型上下文、不触发新回合。暂时错误不绕过 manager 的沉降、重试和报告去重。
 - `pi-subagents` 不注册全局快捷键；用户通过 `/subagents` 命令管理 child，停止操作使用 `/subagents stop [id]`。
 - Widgets and rails are status-oriented, normally unframed, and do not take editor focus.

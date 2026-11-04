@@ -5,7 +5,7 @@ import { child } from "./helpers/records.js";
 const theme = { fg: (_color: string, text: string) => text };
 
 describe("native subagent status", () => {
-	test("shows one running glyph and only running child ids", () => {
+	test("shows agents xN for running child count", () => {
 		expect(
 			formatSubagentStatus(
 				[
@@ -18,7 +18,7 @@ describe("native subagent status", () => {
 				],
 				theme,
 			),
-		).toBe("🤖 󰪠#21 #22 #23");
+		).toBe("agents x3");
 	});
 
 	test("removes the status on completion and cannot restore it after abort", () => {
@@ -26,7 +26,7 @@ describe("native subagent status", () => {
 		const controller = new AbortController();
 		const status = createSubagentStatus({ theme, setStatus }, controller.signal);
 		status.refresh([child({ id: "agent-21" })]);
-		expect(setStatus).toHaveBeenLastCalledWith("pi-subagents", "🤖 󰪠#21");
+		expect(setStatus).toHaveBeenLastCalledWith("pi-subagents", "agents x1");
 		status.refresh([child({ id: "agent-21", state: "done" })]);
 		expect(setStatus).toHaveBeenLastCalledWith("pi-subagents", undefined);
 		status.refresh([child({ id: "agent-22" })]);

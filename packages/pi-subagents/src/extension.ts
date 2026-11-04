@@ -91,14 +91,17 @@ function childIdentityFromEnv(env: NodeJS.ProcessEnv): ChildIdentity | undefined
  * The host's own listing of what still exists. Recovery asks one question — is this attachment still
  * there? — and each host answers it with its own inventory.
  */
-function listHostAttachments(host: PanelHost): Promise<HostList> {
+function listHostAttachments(
+	host: PanelHost,
+	env: NodeJS.ProcessEnv = process.env,
+): Promise<HostList> {
 	switch (host) {
 		case "herdr":
-			return listHerdrAttachments(systemHostCommandRunner, 10_000);
+			return listHerdrAttachments(systemHostCommandRunner, 10_000, { env });
 		case "cmux":
 			return listCmuxAttachments(systemHostCommandRunner, 10_000);
 		case "rex":
-			return listRexAttachments(systemHostCommandRunner, 10_000);
+			return listRexAttachments(systemHostCommandRunner, 10_000, { env });
 	}
 }
 
@@ -305,6 +308,21 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 				});
 				runtime.resources.add("subagent-skill-catalog", unsubscribeSkillCatalog);
 			}
+			const closeOldAttachment = (record: SubagentRecord) => {
+				const old = record.runtime?.attachment;
+				if (old?.kind !== "panel") return undefined;
+				return async () => {
+					try {
+						const handle = rebindHostAttachment({
+							host: old.host,
+							attachmentId: old.id,
+							ownerId,
+							ownsAttachment,
+						});
+						await handle.cleanup();
+					} catch {}
+				};
+			};
 
 			manager = new SubagentManager({
 				parentSessionId,
@@ -363,6 +381,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 												timeoutMs: START_WINDOW_MS,
 												...(signal === undefined ? {} : { signal }),
 											}),
+										closeOldAttachment: closeOldAttachment(record),
 										signal: runtime.signal,
 										diagnose,
 									}),
@@ -392,6 +411,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 												timeoutMs: START_WINDOW_MS,
 												...(signal === undefined ? {} : { signal }),
 											}),
+										closeOldAttachment: closeOldAttachment(record),
 										signal: runtime.signal,
 										diagnose,
 									});

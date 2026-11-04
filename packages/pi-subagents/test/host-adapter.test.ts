@@ -7,6 +7,8 @@ import {
 	type HostAttachment,
 	type HostCommandResult,
 	type HostCommandRunner,
+	herdrTabIds,
+	listRexAttachments,
 	selectHostAdapter,
 } from "../src/host-adapter.js";
 import type { LaunchSpec } from "../src/launch-spec.js";
@@ -731,3 +733,37 @@ test.skipIf(process.env.HERDR_ENV !== "1")(
 	},
 	15_000,
 );
+
+test("herdrTabIds filters tabs by workspaceId when provided", () => {
+	const tabListJson = JSON.stringify({
+		result: {
+			tabs: [
+				{ tab_id: "tab-1", workspace_id: "ws-A" },
+				{ tab_id: "tab-2", workspace_id: "ws-B" },
+				{ tab_id: "tab-3", workspace_id: "ws-A" },
+			],
+		},
+	});
+	expect(herdrTabIds(tabListJson)).toEqual(new Set(["tab-1", "tab-2", "tab-3"]));
+	expect(herdrTabIds(tabListJson, "ws-A")).toEqual(new Set(["tab-1", "tab-3"]));
+	expect(herdrTabIds(tabListJson, "ws-B")).toEqual(new Set(["tab-2"]));
+	expect(herdrTabIds(tabListJson, "ws-C")).toEqual(new Set([]));
+});
+
+test("listRexAttachments filters blocks by session when provided", async () => {
+	const { runner, calls } = runnerFor([
+		result(JSON.stringify({ instance_id: "inst-1", started_at: "t0" })),
+		result("blk-s1-1\nblk-s1-2\n"),
+	]);
+	const list = await listRexAttachments(runner, 1000, {
+		env: { REX_SESSION: "session-1" },
+	});
+	expect(list.known).toBe(true);
+	if (!list.known) throw new Error("not known");
+	expect(list.generation).toContain("session-1");
+	expect(list.present).toEqual(new Set(["blk-s1-1", "blk-s1-2"]));
+	expect(calls).toEqual([
+		["rex", "api", "call", "server.status"],
+		["rex", "block", "ls", "-q", "-s", "session-1"],
+	]);
+});

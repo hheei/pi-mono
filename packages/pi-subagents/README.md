@@ -43,7 +43,7 @@ Subagents communicate with the parent through the `commands` table in `state.sql
 - **Panel Failure Auto-Close**: When a subagent running in a panel encounters a fatal error or reports a blocker, the manager starts a 15-second countdown after notifying the parent, automatically closing the panel tab to avoid workspace clutter unless new instructions are dispatched.
 ## Compact status and reports
 
-Running children use the native Pi status line: `🤖 󰪠#21 #22 #23`. With pi-status installed, this appears at the bottom right before the existing TODO segment, separated by ` ‧ `. Display shorthand `#21` refers to tool ID `agent-21`. No running children means no agent segment; no multi-line parent widget is mounted.
+Running children use the native Pi status line: `agents xN` (e.g. `agents x3`). With pi-status installed, this appears at the bottom right before the existing TODO segment, separated by ` ‧ `. No running children means no agent segment; no multi-line parent widget is mounted.
 
 Confirmed done, error, and blocked reports appear once as `subagent-info` transcript entries. Collapsed entries show the outcome, child ID, and agent name; expand to read the complete report. They survive resume and do not enter model context. The original automatic `subagent-report` still reaches the model, with its duplicate transcript display hidden. Transient errors remain subject to settlement and retry checks before reporting.
 

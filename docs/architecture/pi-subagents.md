@@ -73,7 +73,7 @@ manager 的默认启动 deadline 为 60 秒。
 
 ## 紧凑状态与交互报告
 
-父会话通过原生 `setStatus("pi-subagents", text)` 发布机器人 emoji、运行 glyph 与正在运行的 child 编号；`agent-3f9a1c` 显示为 `#3f9a1c`，显示编号不改变真实工具 ID。`pi-status` 在 Footer 第二行右侧按 agent、TODO 顺序组合，以 ` ‧ ` 分隔。缺少 pi-status 时使用 Pi 原生状态展示，不需要修改 Pi host 或依赖具体扩展。
+父会话通过原生 `setStatus("pi-subagents", text)` 发布正在运行的 child 数量（例如 `agents x3`）。`pi-status` 在 Footer 第二行右侧按 agent、TODO 顺序组合，以 ` ‧ ` 分隔。缺少 pi-status 时使用 Pi 原生状态展示，不需要修改 Pi host 或依赖具体扩展。
 
 移除父会话的多行 Widget、elapsed 刷新和终态保留计时器。状态投影从 manager 读取，过期异步读取不能覆盖新快照；session 切换、reload 或 shutdown 移除状态并取消订阅。子会话自己的身份展示不受影响，完整管理仍通过 `/subagents`。
 

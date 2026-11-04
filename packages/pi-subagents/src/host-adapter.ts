@@ -585,6 +585,7 @@ export function herdrPanelFocused(
 export async function listHerdrAttachments(
 	runner: HostCommandRunner,
 	timeoutMs: number,
+	options?: { readonly ancestry?: ReadonlySet<number>; readonly env?: NodeJS.ProcessEnv },
 ): Promise<HostList> {
 	const status = await runner.run("herdr", ["status", "server"], { timeoutMs });
 	if (status.timedOut || status.exitCode !== 0) return { known: false };
@@ -597,20 +598,37 @@ export async function listHerdrAttachments(
 	} catch {
 		return { known: false };
 	}
+	let workspaceId: string | undefined;
+	const ancestry = options?.ancestry ?? (await processAncestry(runner, timeoutMs));
+	if (ancestry !== undefined) {
+		const owned = await resolveHerdrOwnedPane(
+			runner,
+			timeoutMs,
+			options?.env !== undefined ? { ancestry, env: options.env } : { ancestry },
+		);
+		workspaceId = owned.pane?.workspaceId;
+	}
+	if (workspaceId !== undefined && workspaceId !== "") {
+		generation = `${generation}:${workspaceId}`;
+	}
 	const tabs = await runner.run("herdr", ["tab", "list"], { timeoutMs });
 	if (tabs.timedOut || tabs.exitCode !== 0) return { known: false };
-	const present = herdrTabIds(tabs.stdout);
+	const present = herdrTabIds(tabs.stdout, workspaceId);
 	if (present === undefined) return { known: false };
 	return { known: true, generation, present };
 }
 
-export function herdrTabIds(output: string): ReadonlySet<string> | undefined {
+export function herdrTabIds(output: string, workspaceId?: string): ReadonlySet<string> | undefined {
 	const entries = herdrCollection(output, "tabs");
 	if (entries === undefined) return undefined;
 	const ids = new Set<string>();
 	for (const entry of entries) {
 		if (typeof entry !== "object" || entry === null) continue;
-		const id = (entry as Record<string, unknown>).tab_id;
+		const rec = entry as Record<string, unknown>;
+		if (workspaceId !== undefined && workspaceId !== "" && rec.workspace_id !== workspaceId) {
+			continue;
+		}
+		const id = rec.tab_id;
 		if (typeof id === "string" && id !== "") ids.add(id);
 	}
 	return ids;
@@ -902,11 +920,24 @@ export async function resolveRexSession(
 export async function listRexAttachments(
 	runner: HostCommandRunner,
 	timeoutMs: number,
+	options?: { readonly env?: NodeJS.ProcessEnv },
 ): Promise<HostList> {
 	const status = await runner.run("rex", ["api", "call", "server.status"], { timeoutMs });
 	if (!rexCommandSucceeded(status)) return { known: false };
-	const generation = rexGeneration(status.stdout);
+	let generation = rexGeneration(status.stdout);
 	if (generation === undefined) return { known: false };
+	const session = options?.env?.[REX_SESSION_ENV]?.trim() ?? process.env[REX_SESSION_ENV]?.trim();
+	if (session !== undefined && session !== "") {
+		generation = `${generation}:${session}`;
+		const blocks = await runner.run("rex", ["block", "ls", "-q", "-s", session], { timeoutMs });
+		if (!rexCommandSucceeded(blocks)) return { known: false };
+		const present = new Set<string>();
+		for (const line of blocks.stdout.split("\n")) {
+			const id = line.trim();
+			if (id !== "") present.add(id);
+		}
+		return { known: true, generation, present };
+	}
 	const sessions = await runner.run("rex", ["api", "call", "session.list"], { timeoutMs });
 	if (!rexCommandSucceeded(sessions)) return { known: false };
 	const ids = rexSessionIds(sessions.stdout);

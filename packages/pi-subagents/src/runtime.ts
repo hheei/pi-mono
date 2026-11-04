@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { errorMessage } from "@hheei/pi-ext-core";
 import { type ChildRuntime, spawnChildRuntime } from "./child-process.js";
 import type { PanelHost, Presentation, SubagentRecord } from "./domain.js";
@@ -37,6 +38,7 @@ export interface LaunchChildOptions {
 	readonly record: SubagentRecord;
 	/** Waits for this child's bridge connection; false when it did not connect in time. */
 	readonly waitForBridge: (childId: string, signal?: AbortSignal) => Promise<boolean>;
+	readonly closeOldAttachment?: (() => Promise<void>) | undefined;
 	readonly signal?: AbortSignal;
 	readonly diagnose?: (message: string) => void;
 }
@@ -142,6 +144,14 @@ export interface LaunchOutcome<T> {
 export async function openChildPanel(
 	options: OpenChildPanelOptions,
 ): Promise<LaunchOutcome<HostAttachment>> {
+	if (options.closeOldAttachment !== undefined) {
+		try {
+			await options.closeOldAttachment();
+			await delay(100);
+		} catch (error) {
+			options.diagnose?.(`could not close old attachment: ${errorMessage(error)}`);
+		}
+	}
 	const record = options.record;
 	const plan = planChildRuntime(record, "panel");
 	await recordRuntimeEvidence(options.registry, record, plan);

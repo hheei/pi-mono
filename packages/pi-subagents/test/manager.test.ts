@@ -2946,6 +2946,37 @@ describe("SubagentManager over the bridge", () => {
 		expect(await test1.manager.get(childId)).toMatchObject({ state: "done" });
 	});
 
+	test("delivers full multiline assistant text in auto-report without 240-char summary truncation", async () => {
+		const test1 = await harness();
+		const spawned = await test1.manager.spawn({
+			agent: "worker",
+			task: "Long answer test",
+		});
+		if ("reason" in spawned) throw new Error(spawned.reason);
+		const childId = spawned.child.id;
+		const fullAnswer = `Line 1 of answer\nLine 2 of answer\n${"detail ".repeat(59)}detail`;
+		test1.bridge.responses.set(`${childId}:get_entries`, async () => ({
+			entries: [
+				{
+					type: "message",
+					id: "msg-full",
+					message: {
+						role: "assistant",
+						stopReason: "stop",
+						content: [{ type: "text", text: fullAnswer }],
+					},
+				},
+			],
+		}));
+		await test1.manager.handleEvent(childId, { type: "agent_end" });
+		await test1.manager.handleEvent(childId, {
+			type: "agent_settled",
+			message: { role: "assistant", stopReason: "stop" },
+		});
+		await until(test1.reportsArrived(1));
+		expect(test1.reports[0]?.message).toBe(fullAnswer);
+	});
+
 	test("batches auto-reports when multiple children settle together and exposes task in get", async () => {
 		const test1 = await harness();
 		const c1 = await test1.manager.spawn({ agent: "worker", task: "Task 1" });
@@ -2985,5 +3016,61 @@ describe("SubagentManager over the bridge", () => {
 		// The batch window is 500ms of the manager's own clock; both deliveries are the event.
 		await until(test1.reportsArrived(2));
 		expect(test1.reports.map((r) => r.childId).sort()).toEqual([c1.child.id, c2.child.id].sort());
+	});
+
+	test("renegotiates presentation to panel on resume when presentation host is available", async () => {
+		const test1 = await harness({ host: true });
+		const record = await test1.addChild("sa_reneg", {
+			state: "done",
+			presentation: "background",
+		});
+
+		const resumed = await test1.manager.send(record.subagentId, "continue task");
+		if ("reason" in resumed) throw new Error(resumed.reason);
+		expect(resumed.state).toBe("running");
+		expect(test1.openPanel).toHaveBeenCalledTimes(1);
+		const stored = await test1.registry.get(record.subagentId);
+		expect(stored?.presentation).toBe("panel");
+	});
+
+	test("degrades presentation to background on resume when parent has no presentation host", async () => {
+		const test1 = await harness({ host: false });
+		const record = await test1.addChild("sa_degrade", {
+			state: "done",
+			presentation: "panel",
+		});
+
+		const resumed = await test1.manager.send(record.subagentId, "continue task");
+		if ("reason" in resumed) throw new Error(resumed.reason);
+		expect(resumed.state).toBe("running");
+		expect(test1.launch).toHaveBeenCalledTimes(1);
+		const stored = await test1.registry.get(record.subagentId);
+		expect(stored?.presentation).toBe("background");
+	});
+
+	test("resumes on current host when previous attachment was on a different host", async () => {
+		const test1 = await harness({
+			host: true,
+			directory: {
+				host: "rex",
+				list: async () => ({ known: true, generation: "g1", present: new Set() }),
+				open: async () => ({ failure: "not opened" }),
+			},
+		});
+		const record = await test1.addChild("sa_cross_host", {
+			state: "running",
+			presentation: "panel",
+			runtime: {
+				runtimeIdentity: "rt-old",
+				endpoint: "/tmp/old.sock",
+				attachment: { kind: "panel", host: "herdr", id: "tab-old" },
+			},
+		});
+
+		// Child has an attachment from herdr, but current parent directory host is rex.
+		// Send detects panelDetached and opens a panel on rex.
+		const resumed = await test1.manager.send(record.subagentId, "continue on new host");
+		if ("reason" in resumed) throw new Error(resumed.reason);
+		expect(test1.openPanel).toHaveBeenCalledTimes(1);
 	});
 });

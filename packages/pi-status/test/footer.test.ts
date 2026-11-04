@@ -258,7 +258,7 @@ function mountFooter(extensionStatuses: Map<string, string>): CompactFooterCompo
 	return new CompactFooterComponent(ctx, { requestRender: vi.fn() }, plainTheme, footerData);
 }
 
-const AGENT_SEGMENT = "🤖 󰪠#21 #22 #23";
+const AGENT_SEGMENT = "agents x3";
 const TODO_SEGMENT = "󰪠 #1 Task title";
 const SEPARATOR = " ‧ ";
 

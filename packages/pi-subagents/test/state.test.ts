@@ -3,7 +3,9 @@ import {
 	aggregateUsage,
 	assistantUpdatePhase,
 	createStateProjector,
+	lastAssistantText,
 	summarizeCurrentBranch,
+	transcriptFacts,
 } from "../src/state.js";
 
 function turn(id: string, text: string, stopReason = "stop", cost: number | null = 0): unknown {
@@ -62,6 +64,12 @@ describe("state projection", () => {
 		];
 		expect(summarizeCurrentBranch(entries)).toBe("latest");
 		expect(summarizeCurrentBranch([turn("c", "x".repeat(500), "stop", 0.1)])?.length).toBe(240);
+		const longTurn = [turn("d", `line1\nline2\n${"x".repeat(300)}`, "stop", 0.1)];
+		expect(lastAssistantText(longTurn)).toBe(`line1\nline2\n${"x".repeat(300)}`);
+		const facts = transcriptFacts(longTurn);
+		expect(facts.resultText).toBe(`line1\nline2\n${"x".repeat(300)}`);
+		expect(facts.summary?.length).toBe(240);
+		expect(facts.summary).not.toContain("\n");
 		expect(aggregateUsage(entries)).toEqual({
 			inputTokens: 4,
 			outputTokens: 6,

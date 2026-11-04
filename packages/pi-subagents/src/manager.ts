@@ -483,7 +483,20 @@ export class SubagentManager {
 		if (record.presentation === "panel") {
 			const openPanel = this.#deps.presentation?.openPanel;
 			if (openPanel === undefined) {
-				throw new Error("This parent has no presentation host for a panel child");
+				if (panelRequired) {
+					throw new Error("This parent has no presentation host for a panel child");
+				}
+				const note = `No presentation host is available (${this.#deps.presentation?.reason ?? "no host adapter"}), so this child runs in the background`;
+				const background = await this.#update(record.subagentId, (current) => ({
+					...current,
+					presentation: "background",
+				}));
+				const fallback = await this.#deps.launch(background);
+				if (fallback.handle !== undefined) {
+					this.#watchRuntime(background.subagentId, fallback.handle);
+				}
+				if (fallback.failure !== undefined) throw new Error(`${note}; ${fallback.failure}`);
+				return note;
 			}
 			const launch = await openPanel(record);
 			if (launch.handle !== undefined) this.#attachments.set(record.subagentId, launch.handle);
@@ -800,7 +813,7 @@ export class SubagentManager {
 		const workVersion = this.#workVersions.get(id) ?? 0;
 
 		const facts = await this.#facts(id);
-		const text = facts?.summary;
+		const text = facts?.resultText ?? facts?.summary;
 		await this.#mutate(id, async () => {
 			const current = await this.#deps.registry.get(id);
 			const activityMoved = (this.#activity.get(id) ?? 0) !== activity;
@@ -1782,7 +1795,14 @@ export class SubagentManager {
 			// Deliverability is the bridge connection, minus a process that left the delegated session:
 			// input goes to a session, and this process no longer serves this child's session. What is
 			// left to decide is whether a runtime of ours may still own it.
-			if (this.#leftSessions.has(id) || !this.#deps.bridge.isConnected(id)) {
+			const currentHost = this.#deps.directory?.host;
+			const attachment = record.runtime?.attachment;
+			const panelDetached =
+				record.presentation === "panel" &&
+				currentHost !== undefined &&
+				attachment?.kind === "panel" &&
+				attachment.host !== currentHost;
+			if (this.#leftSessions.has(id) || !this.#deps.bridge.isConnected(id) || panelDetached) {
 				const doubt = this.#runtimeDoubt(id);
 				if (doubt !== undefined) {
 					return failure("send", doubt, id, record.state, ["runtime metadata retained"], false);
@@ -1798,10 +1818,13 @@ export class SubagentManager {
 					return failure("send", errorMessage(error), id, record.state, ["no runtime was started"]);
 				}
 				const { sessionPath, persistence } = placement;
+				const targetPresentation: Presentation =
+					this.#deps.presentation?.openPanel !== undefined ? "panel" : "background";
 				const resumedRecord = await this.#update(id, (current) => ({
 					...current,
 					state: "running",
 					intent: "active",
+					presentation: targetPresentation,
 					persistence,
 					...(sessionPath === undefined ? {} : { sessionPath }),
 					launchConfig:

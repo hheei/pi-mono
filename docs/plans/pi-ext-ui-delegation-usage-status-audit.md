@@ -65,14 +65,14 @@ Requests ×8 对应同一集合的 8 次请求。IN、OUT 是这 8 次请求的�
 
 ### 用户目标与原因
 
-改为 subagents xN，去掉机器人、运行 glyph 和 ID 列表，保留简明数量。
+改为 agents xN，去掉机器人、运行 glyph 和 ID 列表，保留简明数量。
 
 直接发生点：packages/pi-subagents/src/status.ts formatSubagentStatus 过滤 visual running children，然后拼“🤖 ”+running glyph+formatSubagentId 列表；#2 来自 agent-2 的展示简写。status.test.ts 明确断言旧字符串。extension.ts 通过 createRenderThrottle 刷新原生 setStatus，本身不需要换状态传输机制。
 
 ### 建议验收契约
 
 - 沿用现有计数含义：N 为 visual running child 数，不包括 done/error/blocked/interrupted，不按 delegation revision 重复计数；若改为全部 agent 总量，另行明确。
-- 一台运行显示 subagents x1，三台显示 subagents x3；使用用户要求的 ASCII x，不增加 emoji、Nerd Font glyph 或 #id 列表。
+- 一台运行显示 agents x1，三台显示 agents x3；使用用户要求的 ASCII x，不增加 emoji、Nerd Font glyph 或 #id 列表。
 - N=0 沿用当前行为移除状态，不显示空占位；保留现有 abort/dispose 幂等清理、节流与最后状态送达，不新增 timer/widget。
 - ID 仍在 dashboard/工具结果可检查；不要删除 formatSubagentId，info.ts 仍使用它。
 - 通过 status.test.ts 验证混合状态计数、running→done、重复 refresh、abort 后不能恢复；窄屏无依赖特殊字体。

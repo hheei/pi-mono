@@ -21,7 +21,7 @@ The package mounts an ext-core response status tracker and replaces Pi's default
   - Routing indicator when a virtual model resolves to a distinct physical model (`virtual -> physical`).
   - Context window visualization gauge with percentage and token counts (e.g. `[████░░░░░░] 42% (84k/200k)`), colored dynamically as limits approach.
   - Session token usage and cumulative cost tracking.
-  - Right-aligned running child agent ids followed by the TODO status, separated by ` ‧ ` (e.g. `🤖 󰪠#21 #22 #23 ‧ 󰪠 #1 Task`); the separator is dropped when only one side is present, and an unrelated extension status is shown only when both are absent.
+  - Right-aligned running child agents count followed by the TODO status, separated by ` ‧ ` (e.g. `agents x3 ‧ 󰪠 #1 Task`); the separator is dropped when only one side is present, and an unrelated extension status is shown only when both are absent.
 - **Lifecycle Cleanliness**: Gracefully unmounts and restores original UI footers on session disposal or reload.
 
 ## Installation
