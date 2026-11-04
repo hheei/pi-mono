@@ -18,6 +18,7 @@ test("publishes the message view for one session", async () => {
 			};
 		},
 		registerToolRenderer() {},
+		registerMarkdownTransformer() {},
 		getSettings: () => ({}),
 	} as unknown as ExtensionAPI;
 	extension(pi);

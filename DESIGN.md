@@ -90,6 +90,7 @@ Extension surfaces reuse these roles instead of dimming every secondary line:
 - User messages: one padded `userMessageBg` block with `userMessageText`.
 - Thinking 分类统计显示 `thinking xN · T tokens`；N 为当前分类的非空 thinking 项数，按现有 assistant-message 项粒度计数，流式更新原项不重复增加。展开子项的标签保持不变。
 - Assistant prose: terminal background with whitespace between semantic blocks.
+- Assistant prose 的裸路徑只在 host app 判定「讀者就在這台機器」時才變成 `[path](file://localhost/<abs>)`，其餘一律保持純文字。每個 host app 是一個 `LinkHostProvider`（`pi-ext-ui/src/file-links.ts`）：VS Code 認得但從不改寫，它自己的 terminal link provider 會在擁有檔案的一側開檔；Rex 每 session 問一次 `client.list`，全部 app client 都在 loopback 才改寫，網路上的 app client 代表需要 ssh target，而那在這側不可知。OSC 8 由 Pi 的 markdown 渲染器加；fenced code、行內 code、既有連結與 URL 不改寫，點擊失敗由終端與讀者機器負責，不在擴充內補償。
 - Thinking: italic `thinkingText`. While Pi hides thinking, each item is one row: a content preview of at most 20 graphemes (ellipsis for anything after it) that opens the full text on click; while Pi shows thinking, the aggregate prints the full text flat with no preview row.
 - Extension messages: one `customMessageBg` block using `customMessageLabel` and `customMessageText`.
 - NEVER add avatars, decorative labels, nested cards, or large collapsed placeholders.

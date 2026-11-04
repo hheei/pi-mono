@@ -8,6 +8,7 @@ import {
 	registerSettings,
 	toolRendererPoint,
 } from "@hheei/pi-ext-core";
+import { linkPaths, resolveLocalLinks } from "./file-links.js";
 import { installHostToolGroups } from "./host-transcript-patch.js";
 import { createMessageView } from "./message-view.js";
 import { createOptionalToolRendererFactory, registerCollapsibleToolRenderer } from "./renderer.js";
@@ -77,6 +78,10 @@ export default function (pi: ExtensionAPI): void {
 				"tool-group-settings",
 				registerSettings(provider, getRuntimeSettingsRegistry(pi)),
 			);
+			// A host that resolves paths itself, or a reader on another machine, keeps them as text.
+			if (await resolveLocalLinks(pi, process.env)) {
+				pi.registerMarkdownTransformer((markdown) => linkPaths(markdown));
+			}
 			context.resources.add("tool-groups", () => {
 				redrawGroups = undefined;
 				patch?.dispose();
