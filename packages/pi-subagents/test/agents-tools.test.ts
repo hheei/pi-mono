@@ -186,7 +186,7 @@ describe("agent tools", () => {
 		// The same JSON Schema reaches the model and codemode: both surfaces read `required`.
 		const { required, properties } = objectSchema(delegate.parameters);
 		expect(required).toEqual(["task"]);
-		expect(Object.keys(properties)).toEqual(["task", "wait", "id", "agent", "cwd"]);
+		expect(Object.keys(properties)).toEqual(["task", "wait", "id", "agent", "cwd", "owner"]);
 	});
 
 	test("delegate description shows how to create, continue, and avoid guessing an id", () => {

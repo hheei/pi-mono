@@ -11,6 +11,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { expect, test, vi } from "vitest";
 import piSubagentsExtension from "../src/extension.js";
+import { withoutInheritedChildIdentity } from "./helpers/bridge-env.js";
+
+withoutInheritedChildIdentity();
 
 test("the real subagents extension initializes in a standalone SDK parent without a TUI", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "pi-subagents-mcp-real-extension-"));

@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import { openStateDb } from "../src/state-db.js";
 import { withTempDir } from "./helpers/tmp-dir.js";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /** A ledger from before the delegation receipt gained its revision, retry and side-effect fields. */
 function writeLegacyLedger(path: string): void {
@@ -92,6 +92,10 @@ test("adds the columns an older ledger lacks instead of failing on its indexes",
 
 		// The bridge token had no reader once the mailbox replaced the socket handshake.
 		expect(db.prepare("SELECT 1 FROM sqlite_schema WHERE name = 'tokens'").get()).toBeUndefined();
+		// An older ledger gains durable ownership, so a crash-window claim has somewhere to live.
+		expect(
+			db.prepare("SELECT 1 FROM sqlite_schema WHERE name = 'owned_children'").get(),
+		).toBeDefined();
 
 		expect(readdirSync(directory).filter((name) => name.endsWith(".previous"))).toHaveLength(0);
 	});
@@ -113,6 +117,6 @@ test("refuses a ledger written by a newer version instead of rewriting it", asyn
 		future.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
 		future.close();
 
-		expect(() => openStateDb(path)).toThrow(/written by a newer version \(schema 4\)/u);
+		expect(() => openStateDb(path)).toThrow(/written by a newer version \(schema 5\)/u);
 	});
 });

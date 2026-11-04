@@ -62,13 +62,16 @@ export type LeaseReady =
 			readonly rebound: readonly string[];
 			readonly rehydrated: readonly string[];
 			readonly stopped: readonly string[];
+			/** Owned children this provider could not confirm stopped; their claim is kept. */
+			readonly ownedFailures?: readonly string[];
 	  }
 	| { readonly ok: false; readonly reason: "unknown" };
 
 export interface ConversationLease {
 	commit(id: string, edge: LeaseEdge): Promise<SubagentRecord>;
 	roster(): Promise<readonly SubagentRecord[]>;
-	ready(): Promise<LeaseReady>;
+	/** `skip` names children a provider incarnation must not reopen or adopt as ordinary ones. */
+	ready(skip?: ReadonlySet<string>): Promise<LeaseReady>;
 }
 
 type RegistryStore = Pick<SubagentRegistry, "get" | "list" | "update" | "path">;
@@ -86,8 +89,8 @@ export function createConversationLease(options: {
 		roster() {
 			return registry.list();
 		},
-		ready() {
-			return reconcile(registry, hosts, processes);
+		ready(skip) {
+			return reconcile(registry, hosts, processes, skip);
 		},
 	};
 }
@@ -196,11 +199,12 @@ async function reconcile(
 	registry: RegistryStore,
 	hosts: HostDirectory,
 	processes: ProcessDirectory,
+	skip?: ReadonlySet<string>,
 ): Promise<LeaseReady> {
 	const list = await hosts.list();
 	if (!list.known) return { ok: false, reason: "unknown" };
 	const all = await registry.list();
-	const records = all;
+	const records = skip === undefined ? all : all.filter((record) => !skip.has(record.subagentId));
 	const parentSessionId = all[0]?.parentSessionId;
 	const stored =
 		parentSessionId === undefined

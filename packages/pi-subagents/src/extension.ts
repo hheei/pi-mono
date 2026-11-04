@@ -6,6 +6,7 @@ import {
 	errorMessage,
 	fitsOutputBudget,
 	getBackgroundDelivery,
+	provideService,
 	registerExtensionLifecycle,
 	truncateWithSpill,
 } from "@hheei/pi-ext-core";
@@ -14,7 +15,7 @@ import { registerChildBridge } from "./child-bridge.js";
 import { registerParentCommands } from "./commands.js";
 import { activeControllerRole } from "./controller-role.js";
 import type { ChildIdentity, PanelHost, RuntimeAttachment, SubagentRecord } from "./domain.js";
-import { BRIDGE_ENVIRONMENT_KEYS, isThinkingLevel } from "./domain.js";
+import { BRIDGE_ENVIRONMENT_KEYS, isOperationError, isThinkingLevel } from "./domain.js";
 import {
 	createCmuxHostAdapter,
 	createHerdrHostAdapter,
@@ -35,6 +36,7 @@ import type { HostList } from "./lease.js";
 import { createMailboxTransport } from "./mailbox.js";
 import { type ParentChannel, type ParentChannelReport, SubagentManager } from "./manager.js";
 import { transformSubagentsMarkdown } from "./markdown.js";
+import { createSubagentOwnership, SUBAGENT_OWNERSHIP_SERVICE } from "./ownership.js";
 import { sweepUncertainDispatch } from "./receipts.js";
 import { createSubagentRegistry } from "./registry.js";
 import { launchChild, openChildPanel, prepareRuntimeDirectory } from "./runtime.js";
@@ -267,7 +269,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 							rex: createRexHostAdapter({ ownerId, ownsAttachment }),
 						},
 					});
-			const channel =
+			const parentChannel =
 				controller ??
 				createParentChannel(pi, {
 					isIdle: () => context.isIdle(),
@@ -275,7 +277,28 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 					delivery: getBackgroundDelivery(pi),
 					signal: runtime.signal,
 				});
-			runtime.resources.add("parent-channel", () => channel.dispose());
+			runtime.resources.add("parent-channel", () => parentChannel.dispose());
+			let manager!: SubagentManager;
+			// Owned work belongs to its owner: an owned child's report never reaches this
+			// conversation, so a consumer's review cannot wake the parent by itself. The claim is
+			// durable, so a provider that dies first leaves evidence instead of an ordinary child.
+			const ownership = createSubagentOwnership({
+				parentSessionId,
+				statePath: registry.path,
+				async stop(id) {
+					// A claim can outlive the record it was written before; nothing to end then.
+					if ((await registry.get(id)) === undefined) return undefined;
+					const stopped = await manager.stop(id);
+					return isOperationError(stopped) ? `${id}: ${stopped.reason}` : undefined;
+				},
+			});
+			const channel: ParentChannel = {
+				deliver(report) {
+					return ownership.guard.deliver(report)
+						? Promise.resolve()
+						: parentChannel.deliver(report);
+				},
+			};
 			if (controller !== undefined) {
 				controller.applied = true;
 				const model = context.model;
@@ -286,7 +309,6 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 					controller.credential = typeof key === "string" && key !== "" ? "present" : "missing";
 				}
 			}
-			let manager!: SubagentManager;
 			// One sqlite file is the ledger and the mailbox. Presence is not liveness.
 			const mailbox = createMailboxTransport({
 				filePath: registry.path,
@@ -354,6 +376,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 					return persistSubagentIntent({ registry, ...input });
 				},
 				bridge: mailbox,
+				ownership: ownership.guard,
 				launch(record) {
 					return launchChild({
 						registry,
@@ -437,6 +460,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 					: {}),
 			});
 			controller?.bindManager(manager);
+			provideService(runtime, SUBAGENT_OWNERSHIP_SERVICE, ownership.service);
 			// Recovery must never take the extension down with it: a registry this version cannot
 			// read (for example records written by an older release) is reported in the session and
 			// the user is told how to reset it.
@@ -450,6 +474,12 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 			if (recovery?.ok === false) {
 				context.ui.notify(
 					"Subagent panels could not be listed, so none were reopened. No second runtime was started.",
+					"warning",
+				);
+			}
+			if (recovery?.ok === true && recovery.ownedFailures !== undefined) {
+				context.ui.notify(
+					`Agents owned by a review scope could not be confirmed stopped: ${recovery.ownedFailures.join("; ")}. They stay unavailable until a stop is confirmed.`,
 					"warning",
 				);
 			}
@@ -491,7 +521,18 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 				repaintStatus.dispose();
 				status.dispose();
 			});
-			runtime.resources.add("subagent-manager", () => manager.closeLocalConnections());
+			// One teardown owner for the two, so owned children are stopped while their transport is
+			// still reachable no matter how the extension's resources are ordered.
+			runtime.resources.add("subagent-manager", async () => {
+				const failures = await ownership.dispose("parent shutdown");
+				manager.closeLocalConnections();
+				if (failures.length > 0) {
+					throw new AggregateError(
+						failures.map((failure) => new Error(failure)),
+						`Owned subagent cleanup failed: ${failures.join(", ")}`,
+					);
+				}
+			});
 		},
 	});
 }

@@ -26,6 +26,7 @@ import type { HostAttachment } from "./host-adapter.js";
 import { stripHindsightContent } from "./launch-spec.js";
 import type { HostDirectory, LeaseReady } from "./lease.js";
 import { commitLease, createConversationLease, type RuntimeGoneOutcome } from "./lease.js";
+import type { OwnershipGuard } from "./ownership.js";
 import { processLockHeld, processLockPath } from "./process-lock.js";
 import {
 	BridgeError,
@@ -199,6 +200,11 @@ export interface ManagerDependencies {
 	readonly idleTimeoutMs?: number;
 	readonly failedPanelCloseTimeoutMs?: number;
 	readonly channel?: ParentChannel;
+	/**
+	 * Owner registry for children a consumer must terminate itself. Absent for parents without an
+	 * owned-work consumer, which keeps ordinary delegation unchanged.
+	 */
+	readonly ownership?: OwnershipGuard;
 }
 
 /**
@@ -401,6 +407,8 @@ export class SubagentManager {
 		{ readonly workVersion: number; readonly message: string }
 	>();
 	readonly #stopping = new Set<string>();
+	/** Children claimed by an owned scope or by another live provider incarnation. */
+	readonly #ownedBlocked = new Set<string>();
 	readonly #listeners = new Set<() => void>();
 	readonly #unsubscribe: Array<() => void> = [];
 
@@ -680,6 +688,43 @@ export class SubagentManager {
 				resolve(true);
 			});
 		});
+	}
+
+	/** A held writer lock means something still serves this child; a failed probe says nothing. */
+	#lockHeld(lockPath: string): boolean {
+		try {
+			return processLockHeld(lockPath);
+		} catch {
+			return true;
+		}
+	}
+
+	/**
+	 * Ends a child whose runtime belongs to an earlier parent process, which left no handle behind.
+	 * The child's writer lock is the evidence: while it is held a process still serves this child, so
+	 * the recorded pid is killed and the lock is awaited; a free lock means the child is gone and the
+	 * pid may already belong to someone else.
+	 */
+	async #terminateRetained(id: string, pid: number): Promise<string | undefined> {
+		const lockPath = processLockPath(this.#deps.registry.path, this.#deps.parentSessionId, id);
+		if (lockPath === undefined || !this.#lockHeld(lockPath)) return undefined;
+		if (!processAlive(pid)) {
+			return "The recorded child process is gone but its writer lock is still held: a runtime may still serve this child";
+		}
+		try {
+			process.kill(pid, "SIGTERM");
+		} catch (error) {
+			return `Child process termination failed: ${errorMessage(error)}`;
+		}
+		if (await awaitLockReleased(lockPath, SUBAGENT_EXIT_WAIT_MS)) return undefined;
+		try {
+			process.kill(pid, "SIGKILL");
+		} catch {
+			// A process that is gone already cannot be signalled again.
+		}
+		return (await awaitLockReleased(lockPath, SUBAGENT_EXIT_WAIT_MS))
+			? undefined
+			: "Child process termination is not confirmed: the process may still be running";
 	}
 
 	/**
@@ -1258,6 +1303,8 @@ export class SubagentManager {
 		);
 		const outcomes = await Promise.all(
 			records.map(async (record) => {
+				// Owned children of an earlier incarnation are stopped by the caller, never adopted.
+				if (this.#owned(record.subagentId)) return undefined;
 				this.#working.add(record.subagentId);
 				if (!this.#projectors.has(record.subagentId)) {
 					this.#projectors.set(record.subagentId, createStateProjector(record.state));
@@ -1414,14 +1461,43 @@ export class SubagentManager {
 	public async submitDelegation(
 		input: DelegateSubagentInput,
 		onTarget?: (childId: string) => void,
+		signal?: AbortSignal,
 	): Promise<DelegationSubmission | OperationError> {
 		if (stripHindsightContent(input.task).trim() === "") {
 			return failure("delegate", "Task must not be empty", undefined, undefined, [], false);
+		}
+		// Ownership rides on the dispatching call's signal, so it survives a `tool_call` hook that
+		// rewrites the arguments. A token that does not match that binding is refused before
+		// anything is launched: an owner is never something the arguments alone can claim.
+		const owner = this.#deps.ownership?.boundOwner(signal);
+		if (input.owner !== undefined && input.owner !== owner) {
+			return failure(
+				"delegate",
+				"An owned delegation must come from the scope that dispatched it; the owner token does not match this call",
+				input.id,
+				undefined,
+				[],
+				false,
+			);
 		}
 		if (input.id !== undefined) {
 			if (input.id.trim() === "") {
 				return failure("delegate", "Child id must not be empty", undefined, undefined, [], false);
 			}
+			if (owner !== undefined) {
+				// An owned turn always creates its own child: claiming one a human started would hand
+				// a consumer a session whose reports it never asked for.
+				return failure(
+					"delegate",
+					"An owned delegation always creates a new child; give agent instead of id",
+					input.id,
+					undefined,
+					[],
+					false,
+				);
+			}
+			const owned = this.#deps.ownership?.blockReason(input.id, undefined);
+			if (owned !== undefined) return failure("delegate", owned, input.id);
 			onTarget?.(input.id);
 			// Ignore agent and cwd entirely: this child's launch config was frozen at spawn.
 			const child = await this.send(input.id, input.task);
@@ -1439,13 +1515,24 @@ export class SubagentManager {
 				false,
 			);
 		}
+		const agentName = input.agent;
 		const spawned = await this.#spawnWith(
 			{
 				task: input.task,
-				agent: input.agent,
+				agent: agentName,
 				...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+				// An owned child is headless by contract: it reports to its owner, so a native probe
+				// that would open a panel for an ordinary delegation must not do it here.
+				...(owner === undefined ? {} : { presentation: "background" as Presentation }),
 			},
-			(config) => onTarget?.(config.subagentId),
+			async (config) => {
+				// Durable ownership lands before bootstrap and launch, so the owner can stop a child
+				// it just dispatched even when the spawn itself fails afterwards.
+				if (owner !== undefined) {
+					await this.#deps.ownership?.reserve(config.subagentId, owner, agentName);
+				}
+				onTarget?.(config.subagentId);
+			},
 		);
 		if (isOperationError(spawned)) return spawned;
 		return {
@@ -1504,23 +1591,27 @@ export class SubagentManager {
 		const delivery: ReceiptDelivery = wait ? "pending" : "detached";
 		let submitted: DelegationSubmission | OperationError;
 		try {
-			submitted = await this.submitDelegation(input, (childId) => {
-				target.receipt = this.#reserveDelegation(
-					filePath,
-					parentSessionId,
-					childId,
-					task,
-					delivery,
-				);
-				// Registered before dispatch, so a settlement that lands during it already knows the
-				// tool result owns this turn and does not push the same answer as well.
-				if (wait) {
-					this.#waiters.set(childId, {
-						delegationId: target.receipt.delegationId,
-						aborted: false,
-					});
-				}
-			});
+			submitted = await this.submitDelegation(
+				input,
+				(childId) => {
+					target.receipt = this.#reserveDelegation(
+						filePath,
+						parentSessionId,
+						childId,
+						task,
+						delivery,
+					);
+					// Registered before dispatch, so a settlement that lands during it already knows the
+					// tool result owns this turn and does not push the same answer as well.
+					if (wait) {
+						this.#waiters.set(childId, {
+							delegationId: target.receipt.delegationId,
+							aborted: false,
+						});
+					}
+				},
+				signal,
+			);
 		} catch (error) {
 			// A refused reservation happened before any dispatch, so nothing has to be undone.
 			return failure("delegate", errorMessage(error), input.id, undefined, [], true);
@@ -1657,7 +1748,7 @@ export class SubagentManager {
 	 */
 	async #spawnWith(
 		input: SpawnSubagentInput,
-		onConfig?: (config: EffectiveLaunchConfig) => void,
+		onConfig?: (config: EffectiveLaunchConfig) => void | Promise<void>,
 	): Promise<SpawnResult | OperationError> {
 		const cleanTask = stripHindsightContent(input.task).trim();
 		if (cleanTask === "") return failure("spawn", "Task must not be empty");
@@ -1665,7 +1756,9 @@ export class SubagentManager {
 		let childId: string | undefined;
 		try {
 			const config = await withDeadline(this.#deps.resolve(input), this.#deps.deadlineMs ?? 30_000);
-			onConfig?.(config);
+			// A refused claim aborts the spawn before the child exists, so a closed owner never
+			// leaves a child behind.
+			await onConfig?.(config);
 			const cleanTask = stripHindsightContent(input.task);
 			const placement = this.#placement(input);
 			if ("reason" in placement)
@@ -1785,6 +1878,12 @@ export class SubagentManager {
 		rawMessage: string,
 		signal?: AbortSignal,
 	): Promise<OperationError | DelegationSubmission> {
+		// Input to an owned child belongs to its owner alone; a confirmed stop releases it again.
+		const owned = this.#deps.ownership?.blockReason(id, undefined);
+		if (owned !== undefined) return failure("send", owned, id);
+		// A dispatch from outside ends what a released claim still suppressed, so a reused agent's
+		// report reaches this conversation instead of disappearing.
+		this.#deps.ownership?.dispatched(id);
 		const message = stripHindsightContent(rawMessage);
 		this.#bumpActivity(id);
 		this.#clearSettledPanelClose(id);
@@ -2003,6 +2102,20 @@ export class SubagentManager {
 	}
 
 	public stop(id: string): Promise<OperationError | PublicSubagent> {
+		if (this.#deps.ownership?.foreignOwner(id) === true) {
+			// Another incarnation of this session is live and owns the child; ending it here would
+			// bypass the owner's own confirmation.
+			return Promise.resolve(
+				failure(
+					"stop",
+					"Another live provider session owns this child; stop it there",
+					id,
+					undefined,
+					[],
+					true,
+				),
+			);
+		}
 		this.#clearSettledPanelClose(id);
 		return this.#mutate(id, async () => {
 			if (this.#stopping.has(id)) return this.get(id);
@@ -2048,6 +2161,22 @@ export class SubagentManager {
 						);
 					}
 					this.#processes.delete(id);
+				}
+				const retained = record.runtime?.attachment;
+				if (runtime === undefined && retained?.kind === "process") {
+					// A runtime started by an earlier parent process has no handle here; its writer lock
+					// is the only evidence that it is still the process this child is.
+					const unconfirmed = await this.#terminateRetained(id, retained.pid);
+					if (unconfirmed !== undefined) {
+						return failure(
+							"stop",
+							unconfirmed,
+							id,
+							"error",
+							["stopped intent persisted", "runtime metadata retained"],
+							true,
+						);
+					}
 				}
 				if (attachment !== undefined) {
 					// The host owns a panel child, so ending it means closing the panel and confirming
@@ -2103,6 +2232,9 @@ export class SubagentManager {
 					id,
 					"Child was stopped before the delegation finished",
 				);
+				// Ownership ends only here: a report that arrives before this point is still the
+				// owner's, and one that arrives after it cannot wake this conversation either.
+				await this.#deps.ownership?.retire(id);
 				return publicChild(stopped, false);
 			} catch (error) {
 				return failure(
@@ -2268,6 +2400,9 @@ export class SubagentManager {
 			if (record === undefined) return;
 			if (connected) {
 				if (record.intent === "stopped") return;
+				// An owned child is not this provider's ordinary work: adopting it would let a
+				// consumer's review report into this conversation.
+				if (this.#owned(childId)) return;
 				// A process that left the delegated session is not this child: adopting it would rewrite
 				// the child's transcript from the session the human switched to.
 				if (this.#leftSessions.has(childId)) return;
@@ -2422,22 +2557,29 @@ export class SubagentManager {
 	}
 
 	async #reconcile(): Promise<LeaseReady> {
+		const ownership = this.#deps.ownership;
+		// Claims an earlier provider incarnation left behind, and children another live one owns.
+		// Neither may be reopened, adopted, or settled as ordinary work.
+		const claimed = (await ownership?.beginRecovery()) ?? new Set<string>();
+		for (const id of claimed) this.#ownedBlocked.add(id);
 		const directory = this.#deps.directory;
 		if (directory === undefined) {
 			const recovery = await this.recover();
-			return {
+			const failures = await this.#reapOwned();
+			const restored: LeaseReady = {
 				ok: true,
 				rebound: recovery.recovered,
 				rehydrated: [],
 				stopped: [],
 			};
+			return failures.length === 0 ? restored : { ...restored, ownedFailures: failures };
 		}
 		const lease = createConversationLease({
 			registry: this.#deps.registry,
 			hosts: directory,
 			processes: { alive: processAlive },
 		});
-		const result = await lease.ready();
+		const result = await lease.ready(claimed);
 		if (!result.ok) return result;
 		for (const id of result.rebound) {
 			const record = await this.#deps.registry.get(id);
@@ -2450,6 +2592,9 @@ export class SubagentManager {
 				if (runtime !== undefined) this.#watchRuntime(id, runtime);
 			}
 		}
+		// Owned work is stopped before anything is settled as an ordinary child, and the handles
+		// this pass can hold are what make that stop confirmable.
+		const failures = await this.#reapOwned();
 		// A writer that was already gone when this process started cannot report itself, and a
 		// projection is not a delivery. This is the one place liveness is written back, once per
 		// process because `ready` is memoized, through the edge an exit takes. A panel this pass just
@@ -2459,11 +2604,49 @@ export class SubagentManager {
 				record.state === "running" &&
 				record.intent !== "stopped" &&
 				!result.rehydrated.includes(record.subagentId) &&
+				!this.#owned(record.subagentId) &&
 				!this.#isLive(record.subagentId) &&
 				!this.#runtimeAlive(record),
 		);
 		for (const record of gone) await this.#settleUnrecovered(record);
-		return result;
+		return failures.length === 0 ? result : { ...result, ownedFailures: failures };
+	}
+
+	/** A child that belongs to a scope is not this parent's to adopt, settle, or report on. */
+	#owned(id: string): boolean {
+		if (this.#deps.ownership?.blockReason(id, undefined) !== undefined) return true;
+		// The durable claim this id was recovered for is gone: its owner stopped the child and
+		// closed, so the id is nobody's to hold here any more. Keeping it would refuse reuse of a
+		// child no scope owns.
+		this.#ownedBlocked.delete(id);
+		return false;
+	}
+
+	/**
+	 * Stops the owned children of a dead provider incarnation. An unconfirmed child keeps its claim,
+	 * so it stays unavailable instead of becoming an ordinary agent with nobody to end it.
+	 */
+	async #reapOwned(): Promise<readonly string[]> {
+		if (this.#ownedBlocked.size === 0) return [];
+		for (const id of this.#ownedBlocked) {
+			const attachment = (await this.#deps.registry.get(id))?.runtime?.attachment;
+			if (attachment?.kind === "panel") {
+				const handle = this.#deps.directory?.rebind?.(attachment);
+				if (handle !== undefined) this.#attachments.set(id, handle);
+				continue;
+			}
+			if (attachment?.kind === "process") {
+				const runtime = attachRetainedChild(attachment.pid);
+				if (runtime !== undefined) this.#watchRuntime(id, runtime);
+			}
+		}
+		const failures = (await this.#deps.ownership?.reapOrphans()) ?? [];
+		for (const id of this.#ownedBlocked) {
+			if (this.#deps.ownership?.blockReason(id, undefined) === undefined) {
+				this.#ownedBlocked.delete(id);
+			}
+		}
+		return failures;
 	}
 
 	#withSnapshot(record: SubagentRecord): SubagentRecord {
@@ -2551,6 +2734,27 @@ function persistedReplyFinished(entries: readonly unknown[]): boolean {
 		);
 	}
 	return false;
+}
+
+/** Polls until the writer lock is free; a lock probe that cannot answer keeps waiting. */
+function awaitLockReleased(lockPath: string, timeoutMs: number): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	const attempt = async (): Promise<boolean> => {
+		let held: boolean;
+		try {
+			held = processLockHeld(lockPath);
+		} catch {
+			held = true;
+		}
+		if (!held) return true;
+		if (Date.now() >= deadline) return false;
+		await new Promise<void>((resolve) => {
+			const timer = setTimeout(resolve, 50);
+			timer.unref?.();
+		});
+		return attempt();
+	};
+	return attempt();
 }
 
 function processAlive(pid: number): boolean {

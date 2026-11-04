@@ -1,8 +1,10 @@
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { isRecord } from "@hheei/pi-ext-core";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { EffectiveLaunchConfig, SpawnSubagentInput, SubagentRecord } from "../src/domain.js";
+import { isOperationError } from "../src/domain.js";
 import type { HostAttachment, HostObservation } from "../src/host-adapter.js";
 import { assembleChildPrompt } from "../src/launch-spec.js";
 import type { HostDirectory } from "../src/lease.js";
@@ -12,6 +14,7 @@ import {
 	type ParentChannelReport,
 	SubagentManager,
 } from "../src/manager.js";
+import { createSubagentOwnership, type OwnershipGuard, ownerLockPath } from "../src/ownership.js";
 import { holdProcessLock, processLockPath } from "../src/process-lock.js";
 import { BridgeError, type BridgeOperation } from "../src/protocol.js";
 import {
@@ -26,7 +29,12 @@ import {
 import { createSubagentRegistry } from "../src/registry.js";
 import type { LaunchOutcome } from "../src/runtime.js";
 import { transcriptFacts } from "../src/state.js";
-import { openStateDb } from "../src/state-db.js";
+import {
+	deleteOwnedChild,
+	insertOwnedChild,
+	listOwnedChildren,
+	openStateDb,
+} from "../src/state-db.js";
 import { advanceFakeTime, turn, until, useFakeClock, useRealClock } from "./helpers/fake-clock.js";
 import { createTemporaryDirectory } from "./helpers/tmp-dir.js";
 
@@ -265,6 +273,8 @@ async function harness(
 		/** Set to exercise the host-listing restore path instead of the bridge-only one. */
 		directory?: HostDirectory;
 		parentSessionId?: string;
+		/** Set to exercise owned children on the real dispatch seam. */
+		ownership?: OwnershipGuard;
 	} = {},
 ): Promise<Harness> {
 	const cwd = process.cwd();
@@ -362,6 +372,7 @@ async function harness(
 			? { presentation: { reason: "default host herdr is available", openPanel } }
 			: {}),
 		...(options.directory === undefined ? {} : { directory: options.directory }),
+		...(options.ownership === undefined ? {} : { ownership: options.ownership }),
 		channel: {
 			async deliver(report): Promise<void> {
 				reports.push(report);
@@ -3072,5 +3083,440 @@ describe("SubagentManager over the bridge", () => {
 		const resumed = await test1.manager.send(record.subagentId, "continue on new host");
 		if ("reason" in resumed) throw new Error(resumed.reason);
 		expect(test1.openPanel).toHaveBeenCalledTimes(1);
+	});
+});
+/**
+ * The manager behind the real `agents_delegate` tool. The owned scope never reaches past the tool
+ * boundary, so the double applies the same delegation the tool does and answers in its shape.
+ */
+/**
+ * The native tool pipeline as the scope sees it: the `tool_call` hook may rewrite the arguments,
+ * and the manager takes ownership from the call's own signal.
+ */
+function ownedToolContext(
+	manager: () => SubagentManager,
+	hook?: (args: Record<string, unknown>) => void,
+): {
+	readonly calls: Array<Record<string, unknown>>;
+	readonly ctx: ExtensionToolContext;
+} {
+	const calls: Array<Record<string, unknown>> = [];
+	const ctx = {
+		async executeTool(name: string, rawArgs: unknown, options?: { signal?: AbortSignal }) {
+			if (name !== "agents_delegate") throw new Error(`unexpected tool ${name}`);
+			const args = { ...(isRecord(rawArgs) ? rawArgs : {}) };
+			hook?.(args);
+			calls.push(args);
+			const view = await manager().delegate(
+				{
+					task: String(args.task),
+					...(typeof args.agent === "string" ? { agent: args.agent } : {}),
+					wait: args.wait === true,
+					...(typeof args.owner === "string" ? { owner: args.owner } : {}),
+				},
+				options?.signal,
+			);
+			if (isOperationError(view)) {
+				return {
+					toolCall: { type: "toolCall", id: "call/1", name, arguments: {} },
+					result: { content: [{ type: "text", text: view.reason }], details: undefined },
+					isError: true,
+				};
+			}
+			return {
+				toolCall: { type: "toolCall", id: "call/1", name, arguments: {} },
+				result: { content: [{ type: "text", text: JSON.stringify(view) }], details: view },
+				isError: false,
+			};
+		},
+	} as unknown as ExtensionToolContext;
+	return { calls, ctx };
+}
+
+/** One provider incarnation's ownership registry over the suite's ledger file. */
+function createOwnedHarness(parentSessionId: string): {
+	readonly ownership: ReturnType<typeof createSubagentOwnership>;
+	bind(manager: SubagentManager): void;
+} {
+	let bound: SubagentManager | undefined;
+	const ownership = createSubagentOwnership({
+		parentSessionId,
+		statePath: STATE_DB_PATH,
+		async stop(childId) {
+			if (bound === undefined) throw new Error("manager is not bound");
+			const stopped = await bound.stop(childId);
+			return isOperationError(stopped) ? stopped.reason : undefined;
+		},
+	});
+	return {
+		ownership,
+		bind(manager: SubagentManager): void {
+			bound = manager;
+		},
+	};
+}
+
+describe("owned children", () => {
+	test("reserves durable ownership before dispatch and refuses every unowned reuse", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-basic`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard });
+		owned.bind(test1.manager);
+		const tool = ownedToolContext(() => test1.manager);
+
+		const scope = owned.ownership.service.openScope("run_1");
+		const handle = await scope.delegate({ agent: "worker", task: "review the change" }, tool.ctx);
+		expect(tool.calls[0]).toMatchObject({ agent: "worker", wait: false });
+		expect(owned.ownership.guard.blockReason(handle.childId, undefined)).toContain("run_1");
+		// The claim is durable before the child exists, so a crash window has evidence.
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([
+			{
+				childId: handle.childId,
+				ownerId: "run_1",
+				incarnation: expect.any(String),
+			},
+		]);
+
+		// The model-facing paths carry no owner token, so an owned child is not reused or steered.
+		expect(isOperationError(await test1.manager.send(handle.childId, "steer"))).toBe(true);
+		expect(
+			isOperationError(await test1.manager.delegate({ id: handle.childId, task: "reuse" })),
+		).toBe(true);
+		// Even an owned delegation never claims a child that already exists.
+		expect(
+			isOperationError(
+				await test1.manager.delegate({ id: handle.childId, task: "reuse", owner: "forged:run_1" }),
+			),
+		).toBe(true);
+
+		expect(await scope.close("review finished")).toEqual({ closed: true, failures: [] });
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([]);
+		// Only a confirmed close releases the child for ordinary use.
+		expect(isOperationError(await test1.manager.send(handle.childId, "follow up"))).toBe(false);
+		await owned.ownership.dispose("done");
+	});
+
+	test("refuses an owner token this provider never minted without creating a child", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-forged`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard });
+		owned.bind(test1.manager);
+		const before = await test1.manager.list();
+
+		const refused = await test1.manager.delegate({
+			agent: "worker",
+			task: "review the change",
+			owner: "forged:run_1",
+		});
+		// A token that came with the arguments alone is not ownership: it must match the call.
+		expect(isOperationError(refused) && refused.reason).toContain("does not match this call");
+		expect(await test1.manager.list()).toEqual(before);
+		expect(test1.launch).not.toHaveBeenCalled();
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([]);
+		await owned.ownership.dispose("done");
+	});
+
+	test("an explicit user stop ends the owner's wait and releases the child", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-user-stop`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard });
+		owned.bind(test1.manager);
+		const tool = ownedToolContext(() => test1.manager);
+
+		const scope = owned.ownership.service.openScope("run_1");
+		const handle = await scope.delegate({ agent: "worker", task: "review the change" }, tool.ctx);
+		// Stopping a reviewer by hand is allowed; the owner learns it ended instead of waiting forever.
+		expect(isOperationError(await test1.manager.stop(handle.childId))).toBe(false);
+		await expect(handle.settlement).resolves.toMatchObject({ status: "stopped" });
+		expect(owned.ownership.guard.blockReason(handle.childId, undefined)).toBeUndefined();
+		// A close after the stop has nothing left to end and does not touch the agent again.
+		expect(await scope.close("review finished")).toEqual({ closed: true, failures: [] });
+		await owned.ownership.dispose("done");
+	});
+
+	test("recovery stops the child of a dead owner instead of adopting it", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-crash`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({
+			parentSessionId,
+			ownership: owned.ownership.guard,
+			directory: {
+				host: "herdr",
+				list: async () => ({ known: true, generation: "g1", present: new Set<string>() }),
+				open: async () => ({ failure: "no panel" }),
+			},
+		});
+		owned.bind(test1.manager);
+		await test1.addChild("sa_orphan", {
+			state: "running",
+			presentation: "panel",
+			runtime: {
+				runtimeIdentity: "rt-old",
+				endpoint: "/tmp/old.sock",
+				attachment: { kind: "panel", host: "herdr", id: "tab-old" },
+			},
+		});
+		// A claim written by an incarnation whose owner lock nobody holds any more.
+		insertOwnedChild(openStateDb(STATE_DB_PATH), parentSessionId, {
+			childId: "sa_orphan",
+			ownerId: "run_1",
+			incarnation: "dead-incarnation",
+		});
+
+		const ready = await test1.manager.ready();
+		expect(ready).toMatchObject({ ok: true });
+		// The panel of orphaned owned work is never reopened as if a human owned it.
+		expect(ready.ok && ready.rehydrated).toEqual([]);
+		expect(await test1.registry.get("sa_orphan")).toMatchObject({
+			intent: "stopped",
+			state: "done",
+		});
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([]);
+		expect(owned.ownership.guard.blockReason("sa_orphan", undefined)).toBeUndefined();
+		expect(test1.reports).toEqual([]);
+		await owned.ownership.dispose("done");
+	});
+
+	test("a tool_call hook cannot strip ownership from a scope dispatch", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-hook-strip`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard });
+		owned.bind(test1.manager);
+		const tool = ownedToolContext(
+			() => test1.manager,
+			(args) => {
+				delete args.owner;
+			},
+		);
+
+		const scope = owned.ownership.service.openScope("run_1");
+		const handle = await scope.delegate({ agent: "worker", task: "review the change" }, tool.ctx);
+		// The hook removed the argument, but the launch is bound to the call, so it is still owned.
+		expect(tool.calls[0]).not.toHaveProperty("owner");
+		expect(owned.ownership.guard.blockReason(handle.childId, undefined)).toContain("run_1");
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toHaveLength(1);
+		expect(await scope.close("review finished")).toEqual({ closed: true, failures: [] });
+		expect(await test1.registry.get(handle.childId)).toMatchObject({
+			intent: "stopped",
+			state: "done",
+		});
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([]);
+		await owned.ownership.dispose("done");
+	});
+
+	test("a tool_call hook that replaces the owner token is refused before launch", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-hook-replace`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard });
+		owned.bind(test1.manager);
+		const tool = ownedToolContext(
+			() => test1.manager,
+			(args) => {
+				args.owner = "forged:run_1";
+			},
+		);
+		const before = await test1.manager.list();
+
+		await expect(
+			owned.ownership.service
+				.openScope("run_1")
+				.delegate({ agent: "worker", task: "review the change" }, tool.ctx),
+		).rejects.toThrow(/does not match this call/);
+		expect(await test1.manager.list()).toEqual(before);
+		expect(test1.launch).not.toHaveBeenCalled();
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([]);
+		await owned.ownership.dispose("done");
+	});
+
+	test("an owned delegation runs in the background even when a panel host is available", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-headless`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard, host: true });
+		owned.bind(test1.manager);
+		const tool = ownedToolContext(() => test1.manager);
+		const scope = owned.ownership.service.openScope("run_1");
+		const handle = await scope.delegate({ agent: "worker", task: "review the change" }, tool.ctx);
+
+		// Owned work is headless by contract; an ordinary delegation still takes the panel host.
+		expect((await test1.registry.get(handle.childId))?.presentation).toBe("background");
+		const ordinary = await test1.manager.spawn({ agent: "worker", task: "work" });
+		if (isOperationError(ordinary)) throw new Error(ordinary.reason);
+		expect(ordinary.child.presentation).toBe("panel");
+		expect(await scope.close("review finished")).toEqual({ closed: true, failures: [] });
+		await owned.ownership.dispose("done");
+	});
+
+	test("a child another live provider incarnation owns is left alone", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-live`;
+		const owner = createOwnedHarness(parentSessionId);
+		const first = await harness({ parentSessionId, ownership: owner.ownership.guard });
+		owner.bind(first.manager);
+		const tool = ownedToolContext(() => first.manager);
+		const scope = owner.ownership.service.openScope("run_1");
+		const handle = await scope.delegate({ agent: "worker", task: "review the change" }, tool.ctx);
+
+		const other = createOwnedHarness(parentSessionId);
+		const second = await harness({ parentSessionId, ownership: other.ownership.guard });
+		other.bind(second.manager);
+		const ready = await second.manager.ready();
+		if (!ready.ok) throw new Error("recovery failed");
+		// Nothing was stopped, so this provider reports no owned cleanup failure either.
+		expect(ready.ownedFailures).toBeUndefined();
+		expect(other.ownership.guard.foreignOwner(handle.childId)).toBe(true);
+		expect(isOperationError(await second.manager.stop(handle.childId))).toBe(true);
+		expect(await second.registry.get(handle.childId)).toMatchObject({
+			intent: "active",
+			state: "running",
+		});
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toHaveLength(1);
+
+		// The owner still ends its own child and only then is the claim gone.
+		expect(await scope.close("review finished")).toEqual({ closed: true, failures: [] });
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([]);
+		await other.ownership.dispose("done");
+		await owner.ownership.dispose("done");
+	});
+
+	test("a claim written after this provider reconciled is a live foreign owner, not a free child", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-late-claim`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard });
+		owned.bind(test1.manager);
+		const ready = await test1.manager.ready();
+		if (!ready.ok) throw new Error("recovery failed");
+		await test1.addChild("sa_late", { state: "running" });
+
+		// Another provider incarnation claims this child after this one already reconciled, and it
+		// is still running: this provider's recovery snapshot knows nothing about it.
+		const live = holdProcessLock(ownerLockPath(STATE_DB_PATH, "live-incarnation"));
+		try {
+			insertOwnedChild(openStateDb(STATE_DB_PATH), parentSessionId, {
+				childId: "sa_late",
+				ownerId: "run_1",
+				incarnation: "live-incarnation",
+			});
+			expect(isOperationError(await test1.manager.stop("sa_late"))).toBe(true);
+			expect(await test1.registry.get("sa_late")).toMatchObject({
+				intent: "active",
+				state: "running",
+			});
+			expect(isOperationError(await test1.manager.delegate({ id: "sa_late", task: "reuse" }))).toBe(
+				true,
+			);
+			expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toHaveLength(1);
+		} finally {
+			live.release();
+		}
+
+		// Once that owner is gone its claim is stale evidence, so stopping it is cleanup again.
+		expect(isOperationError(await test1.manager.stop("sa_late"))).toBe(false);
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([]);
+		await owned.ownership.dispose("done");
+	});
+
+	test("a recovered live owner's child becomes stoppable once that owner dies", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-owner-died`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard });
+		owned.bind(test1.manager);
+		await test1.addChild("sa_dying", { state: "running" });
+
+		// Another provider owns this child when this one recovers.
+		const live = holdProcessLock(ownerLockPath(STATE_DB_PATH, "dying-incarnation"));
+		insertOwnedChild(openStateDb(STATE_DB_PATH), parentSessionId, {
+			childId: "sa_dying",
+			ownerId: "run_1",
+			incarnation: "dying-incarnation",
+		});
+		const ready = await test1.manager.ready();
+		if (!ready.ok) throw new Error("recovery failed");
+		expect(isOperationError(await test1.manager.stop("sa_dying"))).toBe(true);
+
+		// The owner dies without cleaning up, and its child is still running.
+		live.release();
+		// Reuse stays refused: the child is an orphan, not an ordinary agent.
+		expect(
+			isOperationError(
+				await test1.manager.delegate({ id: "sa_dying", task: "reuse", wait: false }),
+			),
+		).toBe(true);
+		// Ending it is this provider's again, and that stop drops the row the dead owner left.
+		expect(isOperationError(await test1.manager.stop("sa_dying"))).toBe(false);
+		expect(await test1.registry.get("sa_dying")).toMatchObject({ intent: "stopped" });
+		expect(listOwnedChildren(openStateDb(STATE_DB_PATH), parentSessionId)).toEqual([]);
+		expect(owned.ownership.guard.blockReason("sa_dying", undefined)).toBeUndefined();
+		await owned.ownership.dispose("done");
+	});
+
+	test("a recovered child is ordinary again once its owner closes it", async () => {
+		useRealClock();
+		const parentSessionId = `${PARENT_SESSION_ID}-owned-recovered-reuse`;
+		const owned = createOwnedHarness(parentSessionId);
+		const test1 = await harness({ parentSessionId, ownership: owned.ownership.guard });
+		owned.bind(test1.manager);
+		await test1.addChild("sa_shared", { state: "running" });
+
+		// Another provider is live and owns this child when this one recovers.
+		const live = holdProcessLock(ownerLockPath(STATE_DB_PATH, "live-incarnation"));
+		insertOwnedChild(openStateDb(STATE_DB_PATH), parentSessionId, {
+			childId: "sa_shared",
+			ownerId: "run_1",
+			incarnation: "live-incarnation",
+		});
+		const ready = await test1.manager.ready();
+		if (!ready.ok) throw new Error("recovery failed");
+		// Recovered but foreign: not this provider's to reuse, steer, or end.
+		expect(
+			isOperationError(
+				await test1.manager.delegate({ id: "sa_shared", task: "reuse", wait: false }),
+			),
+		).toBe(true);
+		expect(isOperationError(await test1.manager.send("sa_shared", "steer"))).toBe(true);
+		expect(isOperationError(await test1.manager.stop("sa_shared"))).toBe(true);
+
+		// Its owner stops the child, confirms it, and removes the claim it held.
+		live.release();
+		deleteOwnedChild(openStateDb(STATE_DB_PATH), parentSessionId, "sa_shared");
+		test1.bridge.connected.add("sa_shared");
+		test1.bridge.responses.set("sa_shared:get_state", async () => ({
+			idle: false,
+			pendingMessages: false,
+		}));
+
+		// The recovered block did not outlive the claim: ordinary reuse works again.
+		expect(
+			isOperationError(
+				await test1.manager.delegate({ id: "sa_shared", task: "reuse", wait: false }),
+			),
+		).toBe(false);
+		expect(isOperationError(await test1.manager.send("sa_shared", "steer"))).toBe(false);
+		// And its next report is the parent conversation's again, instead of being consumed.
+		expect(
+			owned.ownership.guard.deliver({
+				childId: "sa_shared",
+				agent: "worker",
+				reason: "success",
+				message: "again",
+			}),
+		).toBe(false);
+		expect(await test1.manager.contactParent("sa_shared", "success", "again")).toEqual({
+			delivered: true,
+		});
+		expect(test1.reports.at(-1)).toMatchObject({ childId: "sa_shared", message: "again" });
+		// A scope that never owned it cannot end it either.
+		const unrelated = owned.ownership.service.openScope("run_other");
+		expect(await unrelated.close("unrelated")).toEqual({ closed: true, failures: [] });
+		expect(await test1.registry.get("sa_shared")).toMatchObject({ state: "running" });
+		await owned.ownership.dispose("done");
 	});
 });
