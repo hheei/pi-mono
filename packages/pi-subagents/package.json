@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-subagents",
-	"version": "0.9.2",
+	"version": "0.10.0",
 	"description": "Independent background Pi subagent sessions with durable identity and RPC control.",
 	"type": "module",
 	"main": "dist/index.js",
