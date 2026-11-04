@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	compactionRangeStartIndex,
 	contextCostFromUsage,
 	countSourceEntriesAfterCompaction,
 	type Entry,
@@ -11,11 +12,13 @@ import {
 	latestCoverageIndex,
 	latestCoverageMarkerId,
 	latestGateEnabled,
+	observedTokensSinceLastCompaction,
 	rawTokensAfterIndex,
 	rawTokensSinceDropCoverage,
 	rawTokensSinceLastCompaction,
 	rawTokensSinceObservationCoverage,
 	rawTokensSinceReflectionCoverage,
+	unobservedSourceSpanBefore,
 } from "../src/session-ledger/index.js";
 import {
 	branchSummary,
@@ -300,5 +303,48 @@ describe("provider-reported cost", () => {
 		expect(contextCostFromUsage({ totalTokens: 10 })).toBeUndefined();
 		expect(contextCostFromUsage(undefined)).toBeUndefined();
 		expect(contextCostFromUsage("expensive")).toBeUndefined();
+	});
+
+	describe("compaction range and unobserved spans", () => {
+		it("compactionRangeStartIndex returns 0 when no compaction exists", () => {
+			expect(compactionRangeStartIndex([])).toBe(0);
+			expect(compactionRangeStartIndex([textCustomMessage("raw-1", "a")])).toBe(0);
+		});
+
+		it("compactionRangeStartIndex returns index of firstKeptEntryId", () => {
+			const entries = [
+				textCustomMessage("raw-1", "a"),
+				textCustomMessage("raw-2", "b"),
+				compactionEntry("cmp-1", { firstKeptEntryId: "raw-2" }),
+				textCustomMessage("raw-3", "c"),
+			];
+			expect(compactionRangeStartIndex(entries)).toBe(1);
+		});
+
+		it("observedTokensSinceLastCompaction measures tokens up to coverage marker", () => {
+			const entries = [
+				textCustomMessage("raw-1", "aaaa"),
+				textCustomMessage("raw-2", "bbbb"),
+				observationsRecordedEntry("om-obs-1", {
+					observations: [observation("aaaaaaaaaaaa")],
+					coversUpToId: "raw-2",
+				}),
+			];
+			expect(observedTokensSinceLastCompaction(entries)).toBe(2);
+		});
+
+		it("unobservedSourceSpanBefore reports unobserved entries before cut", () => {
+			const entries = [
+				textCustomMessage("raw-1", "aaaa"),
+				observationsRecordedEntry("om-obs-1", {
+					observations: [observation("aaaaaaaaaaaa")],
+					coversUpToId: "raw-1",
+				}),
+				textCustomMessage("raw-2", "bbbb"),
+				textCustomMessage("raw-3", "cccc"),
+			];
+			const span = unobservedSourceSpanBefore(entries, 3);
+			expect(span).toMatchObject({ firstIndex: 2, lastIndex: 2, entryCount: 1 });
+		});
 	});
 });

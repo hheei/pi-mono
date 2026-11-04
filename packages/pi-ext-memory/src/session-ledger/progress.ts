@@ -268,16 +268,65 @@ export function realTokensSinceAnchor(
 	return Math.max(0, currentContextTokens);
 }
 
-export function rawTokensSinceLastCompaction(entries: Entry[]): number {
+/**
+ * Branch index where Pi's next compaction range starts: the retained boundary
+ * (`firstKeptEntryId`) of the latest compaction, the entry after that
+ * compaction when the boundary id is missing, or 0 before any compaction.
+ */
+export function compactionRangeStartIndex(entries: Entry[]): number {
 	const compactionIndex = findLastCompactionIndex(entries);
-	if (compactionIndex === -1) return rawTokensAfterIndex(entries, -1);
+	if (compactionIndex === -1) return 0;
 
-	const entry = entries[compactionIndex];
-	const firstKeptEntryId = entry?.firstKeptEntryId;
-	const firstKeptIndex = entryIndexForId(entries, firstKeptEntryId);
+	const firstKeptIndex = entryIndexForId(entries, entries[compactionIndex]?.firstKeptEntryId);
+	return firstKeptIndex === -1 ? compactionIndex + 1 : firstKeptIndex;
+}
 
-	if (firstKeptIndex === -1) return rawTokensAfterIndex(entries, compactionIndex);
-	return rawTokensAfterIndex(entries, firstKeptIndex - 1);
+export function rawTokensSinceLastCompaction(entries: Entry[]): number {
+	return rawTokensAfterIndex(entries, compactionRangeStartIndex(entries) - 1);
+}
+
+export function observedTokensSinceLastCompaction(entries: Entry[]): number {
+	const start = compactionRangeStartIndex(entries);
+	const coverageIndex = latestCoverageIndex(entries, OM_OBSERVATIONS_RECORDED);
+	if (coverageIndex < start) return 0;
+
+	let total = 0;
+	for (let i = start; i <= coverageIndex; i++) {
+		const entry = entries[i];
+		if (entry && isSourceEntry(entry)) total += estimateEntryTokens(entry);
+	}
+	return total;
+}
+
+export type UnobservedSourceSpan = {
+	firstIndex: number;
+	lastIndex: number;
+	entryCount: number;
+	tokens: number;
+};
+
+export function unobservedSourceSpanBefore(
+	entries: Entry[],
+	cutIndex: number,
+): UnobservedSourceSpan | undefined {
+	const coverageIndex = latestCoverageIndex(entries, OM_OBSERVATIONS_RECORDED);
+	const start = Math.max(coverageIndex + 1, compactionRangeStartIndex(entries));
+	let firstIndex = -1;
+	let lastIndex = -1;
+	let entryCount = 0;
+	let tokens = 0;
+
+	for (let i = start; i < cutIndex && i < entries.length; i++) {
+		const entry = entries[i];
+		if (!entry || !isSourceEntry(entry)) continue;
+		if (firstIndex === -1) firstIndex = i;
+		lastIndex = i;
+		entryCount++;
+		tokens += estimateEntryTokens(entry);
+	}
+
+	if (firstIndex === -1) return undefined;
+	return { firstIndex, lastIndex, entryCount, tokens };
 }
 
 /**

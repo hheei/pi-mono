@@ -202,6 +202,8 @@ export function latestFullFoldBoundaryId(entries: Entry[]): string | undefined {
 		if (entry?.type !== "compaction") continue;
 		if (!isMemoryDetails(entry.details)) continue;
 		if (!entry.details.fullFold) continue;
+		const foldThroughId = entry.details.foldThroughEntryId;
+		if (foldThroughId && indexes.has(foldThroughId)) return foldThroughId;
 		if (!entry.firstKeptEntryId) continue;
 		if (!indexes.has(entry.firstKeptEntryId)) continue;
 		return entry.firstKeptEntryId;
@@ -211,7 +213,7 @@ export function latestFullFoldBoundaryId(entries: Entry[]): string | undefined {
 
 export function buildCompactionProjection(
 	entries: Entry[],
-	firstKeptEntryId: string,
+	foldThroughEntryId: string,
 	config: CompactionProjectionConfig,
 ): CompactionProjection {
 	const fullFoldBoundaryId = latestFullFoldBoundaryId(entries);
@@ -219,7 +221,7 @@ export function buildCompactionProjection(
 		? entryBoundary(fullFoldBoundaryId)
 		: noneBoundary();
 	const normalProjection = foldProjection(entries, {
-		observationsBoundary: entryBoundary(firstKeptEntryId),
+		observationsBoundary: entryBoundary(foldThroughEntryId),
 		reflectionsBoundary: maintenanceBoundary,
 		dropsBoundary: maintenanceBoundary,
 	});
@@ -228,7 +230,7 @@ export function buildCompactionProjection(
 		0,
 	);
 	const fullFold = observationTokens >= config.observationsPoolMaxTokens;
-	const projection = fullFold ? fullProjection(entries, firstKeptEntryId) : normalProjection;
+	const projection = fullFold ? fullProjection(entries, foldThroughEntryId) : normalProjection;
 
 	const details: MemoryDetails = {
 		type: OM_FOLDED,
@@ -236,6 +238,7 @@ export function buildCompactionProjection(
 		fullFold,
 		observations: projection.observations,
 		reflections: projection.reflections,
+		foldThroughEntryId,
 	};
 
 	return {

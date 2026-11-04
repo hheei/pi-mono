@@ -120,6 +120,10 @@ function sourceOriginAndQualifiers(entry: Entry): {
 				qualifiers: toolCalls.length > 0 ? [`tool calls: ${toolCalls.join(", ")}`] : [],
 			};
 		}
+		const role = (msg as { role?: string }).role;
+		if (role === "bashExecution")
+			return { origin: "User shell command", timestamp, qualifiers: [] };
+		if (role === "system") return { origin: "System", timestamp, qualifiers: [] };
 		const toolName = (msg as ToolResultMessage).toolName;
 		return {
 			origin: `Tool result: ${typeof toolName === "string" && toolName ? toolName : "unknown"}`,

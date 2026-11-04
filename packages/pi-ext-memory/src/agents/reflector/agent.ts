@@ -21,6 +21,17 @@ import {
 import { runWorkerAgent, type WorkerLoopArgs } from "../run-agent.js";
 import { REFLECTOR_SYSTEM } from "./prompts.js";
 
+export class ReflectorStreamError extends Error {
+	readonly stopReason: string;
+	constructor(stopReason: string, errorMessage?: string) {
+		super(
+			`reflector stream ended with stopReason "${stopReason}"${errorMessage ? `: ${errorMessage}` : ""}`,
+		);
+		this.name = "ReflectorStreamError";
+		this.stopReason = stopReason;
+	}
+}
+
 interface RunReflectorArgs extends WorkerLoopArgs {
 	reflections: Reflection[];
 	observations: Observation[];
@@ -309,7 +320,7 @@ export async function runReflector(args: RunReflectorArgs): Promise<ReflectorRes
 		messages: [{ role: "system", content: REFLECTOR_SYSTEM, timestamp: Date.now() }],
 		tools: [recordReflections as unknown as AgentTool],
 	};
-	await runWorkerAgent("reflector", args, prompts, context);
+	const streamError = await runWorkerAgent("reflector", args, prompts, context);
 	if (resurrectedIds.size > 0) {
 		debugLog("reflector.supersede_skipped", { resurrectedIds: [...resurrectedIds] });
 	}
@@ -343,6 +354,13 @@ export async function runReflector(args: RunReflectorArgs): Promise<ReflectorRes
 			afterCoverageById,
 		),
 	});
+	if (
+		acceptedReflections.length === 0 &&
+		supersededReflectionIds.length === 0 &&
+		streamError !== undefined
+	) {
+		throw new ReflectorStreamError(streamError.stopReason, streamError.errorMessage);
+	}
 	if (acceptedReflections.length === 0 && supersededReflectionIds.length === 0) return undefined;
 	return { reflections: acceptedReflections, supersededReflectionIds };
 }

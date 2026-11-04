@@ -59,6 +59,8 @@ export type VisibleMemoryOptions = {
 	maxTokens: number;
 	/** Preferred share of the budget for observations (`observationsPoolTargetTokens`). */
 	observationTargetTokens: number;
+	/** Whether to prefer newest (default) or oldest observations when budget is tight. */
+	observationsFrom?: "newest" | "oldest" | undefined;
 };
 
 export type VisibleMemory = {
@@ -96,7 +98,11 @@ function timestampRank(timestamp: string): number {
  * knowledge, then durable kinds before narration, then relevance, then the most
  * recent line.
  */
-function observationKeepOrder(observations: Observation[], reflections: Reflection[]): number[] {
+function observationKeepOrder(
+	observations: Observation[],
+	reflections: Reflection[],
+	from: "newest" | "oldest" = "newest",
+): number[] {
 	const coverageById = reflectionCoverageMap(observations, reflections);
 	return observations
 		.map((observation, index) => ({
@@ -110,7 +116,9 @@ function observationKeepOrder(observations: Observation[], reflections: Reflecti
 				KIND_KEEP_RANK[a.observation.kind] - KIND_KEEP_RANK[b.observation.kind] ||
 				RELEVANCE_KEEP_RANK[a.observation.relevance] -
 					RELEVANCE_KEEP_RANK[b.observation.relevance] ||
-				timestampRank(b.observation.timestamp) - timestampRank(a.observation.timestamp) ||
+				(from === "oldest"
+					? timestampRank(a.observation.timestamp) - timestampRank(b.observation.timestamp)
+					: timestampRank(b.observation.timestamp) - timestampRank(a.observation.timestamp)) ||
 				b.index - a.index,
 		)
 		.map((candidate) => candidate.index);
@@ -198,7 +206,7 @@ export function selectVisibleMemory(
 	// the observation as safe to trim.
 	const keptObservationIndexes = keepWithinBudget(
 		observationLines,
-		observationKeepOrder(memory.observations, keptReflections),
+		observationKeepOrder(memory.observations, keptReflections, options.observationsFrom),
 		observationBudget,
 	);
 

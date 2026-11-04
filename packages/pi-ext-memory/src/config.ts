@@ -77,6 +77,22 @@ export interface Config {
 	 * main session and the default 32K response budget can overflow the slot.
 	 */
 	agentMaxTokens: number;
+	/**
+	 * Maximum observer chunks the compaction hook may run synchronously to cover
+	 * source entries the background observer has not reached before Pi's cut.
+	 * 0 disables synchronous catch-up.
+	 */
+	compactionCatchUpMaxChunks: number;
+	/**
+	 * Token budget for retained raw entries kept in context when the compaction
+	 * cut is moved back to protect unobserved source.
+	 */
+	compactionMaxRetainedTokens?: number;
+	/**
+	 * Estimated token budget for prior memory carried by observer, reflector,
+	 * and dropper worker requests. Unset derives it from the memory model's context window.
+	 */
+	workerMemoryMaxTokens?: number;
 	model?: ConfiguredModel;
 	showWorkerNotifications: boolean;
 	passive: boolean;
@@ -94,6 +110,7 @@ export const DEFAULTS: Config = {
 	observationsPoolTargetTokens: 10_000,
 	agentMaxTurns: 16,
 	agentMaxTokens: 32_000,
+	compactionCatchUpMaxChunks: 2,
 	showWorkerNotifications: true,
 	passive: false,
 	debugLog: false,
@@ -126,6 +143,38 @@ export function resolveCompactAfterTokens(
 		return Math.max(1, Math.floor(contextWindow * config.compactAfterTokensRatio));
 	}
 	return config.compactAfterTokens;
+}
+
+export const COMPACTION_RETAINED_FALLBACK_MAX_TOKENS = 35_000;
+export const COMPACTION_RETAINED_CONTEXT_RATIO = 0.35;
+
+export function resolveCompactionMaxRetainedTokens(
+	config: Config,
+	contextWindow: number | undefined,
+): number {
+	if (config.compactionMaxRetainedTokens !== undefined && config.compactionMaxRetainedTokens > 0) {
+		return config.compactionMaxRetainedTokens;
+	}
+	if (typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0) {
+		return Math.max(1, Math.floor(contextWindow * COMPACTION_RETAINED_CONTEXT_RATIO));
+	}
+	return COMPACTION_RETAINED_FALLBACK_MAX_TOKENS;
+}
+
+export const WORKER_MEMORY_CONTEXT_RATIO = 0.25;
+export const WORKER_MEMORY_FALLBACK_MAX_TOKENS = 16_000;
+
+export function resolveWorkerMemoryMaxTokens(
+	config: Config,
+	contextWindow: number | undefined,
+): number {
+	if (config.workerMemoryMaxTokens !== undefined && config.workerMemoryMaxTokens > 0) {
+		return config.workerMemoryMaxTokens;
+	}
+	if (typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0) {
+		return Math.max(1, Math.floor(contextWindow * WORKER_MEMORY_CONTEXT_RATIO));
+	}
+	return WORKER_MEMORY_FALLBACK_MAX_TOKENS;
 }
 
 export const THINKING_LEVEL_VALUES: readonly ModelThinkingLevel[] = [
@@ -309,10 +358,18 @@ function normalizeSettingsConfig(value: Record<string, unknown>): Partial<Config
 		"memoryMaxTokens",
 		"agentMaxTurns",
 		"agentMaxTokens",
+		"compactionMaxRetainedTokens",
+		"workerMemoryMaxTokens",
 	] as const;
 	for (const key of numberKeys) {
 		const normalizedValue = positiveIntegerOrUndefined(value[key]);
 		if (normalizedValue !== undefined) normalized[key] = normalizedValue;
+	}
+	if (
+		Number.isInteger(value.compactionCatchUpMaxChunks) &&
+		(value.compactionCatchUpMaxChunks as number) >= 0
+	) {
+		normalized.compactionCatchUpMaxChunks = value.compactionCatchUpMaxChunks as number;
 	}
 	if (isCompactAfterTokensMode(value.compactAfterTokensMode)) {
 		normalized.compactAfterTokensMode = value.compactAfterTokensMode;

@@ -120,6 +120,7 @@ export type MemoryDetails = {
 	observations: Observation[];
 	reflections: Reflection[];
 	budget?: MemoryDetailsBudget | undefined;
+	foldThroughEntryId?: string | undefined;
 };
 
 export type V3MemoryCustomType =
@@ -215,7 +216,8 @@ export function isMemoryDetails(value: unknown): value is MemoryDetails {
 		Array.isArray(value.observations) &&
 		value.observations.every(isObservation) &&
 		Array.isArray(value.reflections) &&
-		value.reflections.every(isReflection)
+		value.reflections.every(isReflection) &&
+		(value.foldThroughEntryId === undefined || typeof value.foldThroughEntryId === "string")
 	);
 }
 

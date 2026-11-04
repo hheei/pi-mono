@@ -6,10 +6,18 @@ import { observationPoolMetrics } from "../agents/dropper/pool.js";
 import { ObserverStreamError, runObserver } from "../agents/observer/agent.js";
 import { runReflector } from "../agents/reflector/agent.js";
 import type { StreamableModelRegistry } from "../agents/worker-stream.js";
-import { type Config, resolveObserverChunkMaxTokens } from "../config.js";
+import {
+	type Config,
+	resolveObserverChunkMaxTokens,
+	resolveWorkerMemoryMaxTokens,
+} from "../config.js";
 import { debugLog, withDebugLogContext } from "../debug-log.js";
 import type { ModelRegistryLike, ResolveResult, Runtime } from "../runtime.js";
-import { fmtLocal, serializeSourceAddressedBranchEntries } from "../serialize.js";
+import {
+	earliestSourceTimestamp,
+	serializeSourceAddressedBranchEntries,
+	sourceTimestamps,
+} from "../serialize.js";
 import {
 	buildObservationsDroppedData,
 	buildObservationsRecordedData,
@@ -508,59 +516,17 @@ function visibleMemory(
 	config: Config,
 	contextWindow: number | undefined,
 	memory: Projection,
+	options: { observationsFrom?: "newest" | "oldest" } = {},
 ): VisibleMemory {
-	const budget = resolveMemoryBudget({ config, contextWindow });
+	const maxTokens =
+		config.workerMemoryMaxTokens !== undefined
+			? resolveWorkerMemoryMaxTokens(config, contextWindow)
+			: resolveMemoryBudget({ config, contextWindow }).cap;
 	return selectVisibleMemory(memory, {
-		maxTokens: budget.cap,
+		maxTokens,
 		observationTargetTokens: config.observationsPoolTargetTokens,
+		observationsFrom: options.observationsFrom,
 	});
-}
-
-/**
- * Instants of the entries the observer was actually shown, plus the fallback used
- * when a cited entry reports no usable time.
- *
- * Only the sent chunk counts: the backlog can be longer than the chunk when it is
- * capped, and an unsent entry's time would sort an observation after conversation
- * it was never asked to cover. Times come from here and never from the model, which
- * reads the chunk long after the conversation happened.
- */
-function sourceTimestamps(
-	entries: readonly Entry[],
-	chunkEntryIds: readonly string[],
-): {
-	byId: Map<string, number>;
-	fallback: number;
-} {
-	const sent = new Set(chunkEntryIds);
-	const byId = new Map<string, number>();
-	let fallback: number | undefined;
-	for (const entry of entries) {
-		if (!sent.has(entry.id) || entry.timestamp === undefined) continue;
-		const time = new Date(entry.timestamp).getTime();
-		if (Number.isNaN(time)) continue;
-		byId.set(entry.id, time);
-		fallback = time;
-	}
-	return { byId, fallback: fallback ?? Date.now() };
-}
-
-/**
- * Earliest known time among the cited entries; the chunk's own time otherwise. Compared as instants
- * and only rendered afterwards: a local hour that happens twice (a DST fall-back) would otherwise
- * order 01:50 before 01:10.
- */
-function earliestSourceTimestamp(
-	timeline: { byId: Map<string, number>; fallback: number },
-	sourceEntryIds: readonly string[],
-): string {
-	let earliest: number | undefined;
-	for (const id of sourceEntryIds) {
-		const time = timeline.byId.get(id);
-		if (time === undefined) continue;
-		if (earliest === undefined || time < earliest) earliest = time;
-	}
-	return fmtLocal(new Date(earliest ?? timeline.fallback));
 }
 
 async function runObserverStage(
@@ -885,10 +851,15 @@ async function runDropperStage(
 	// The agent reads the memory a summary would render, so its proposals stay
 	// accountable to the visible pool; the readiness gate above judged the real
 	// pool, which is what actually has to converge.
-	const dropperMemory = visibleMemory(runtime.config, ctx.model?.contextWindow, {
-		observations: folded.activeObservations,
-		reflections: reflectionsForDropper,
-	});
+	const dropperMemory = visibleMemory(
+		runtime.config,
+		ctx.model?.contextWindow,
+		{
+			observations: folded.activeObservations,
+			reflections: reflectionsForDropper,
+		},
+		{ observationsFrom: "oldest" },
+	);
 	debugLog("dropper.visible_memory", {
 		activeObservationCount: folded.activeObservations.length,
 		visibleObservationCount: dropperMemory.observations.length,

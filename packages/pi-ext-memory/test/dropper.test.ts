@@ -371,4 +371,18 @@ describe("V3 dropper agent", () => {
 		).resolves.toBeUndefined();
 		expect(called).toBe(false);
 	});
+
+	it("throws DropperStreamError on stream failure when no drops were selected", async () => {
+		for (const stopReason of ["error", "aborted"]) {
+			const loop = fakeAgentLoop(() => {}, [
+				{
+					type: "message_end",
+					message: { role: "assistant", stopReason, errorMessage: "stream broken" },
+				},
+			]);
+			await expect(runDropper({ ...baseArgs, agentLoop: loop })).rejects.toThrow(
+				/dropper stream ended with stopReason/,
+			);
+		}
+	});
 });

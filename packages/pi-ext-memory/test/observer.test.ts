@@ -93,6 +93,26 @@ describe("runObserver", () => {
 		expect(observations?.[0]?.id).toMatch(/^[a-f0-9]{12}$/);
 	});
 
+	it("puts current local time after prior memory to preserve prompt cache prefix", async () => {
+		let userText = "";
+		const loop = fakeAgentLoop((prompts) => {
+			const block = prompts[0]?.content?.[0];
+			userText = block && typeof block === "object" && "text" in block ? String(block.text) : "";
+		});
+
+		await runObserver({
+			...baseArgs,
+			priorReflections: ["reflection-marker"],
+			priorObservations: ["observation-marker"],
+			agentLoop: loop,
+		});
+
+		expect(userText.startsWith("CURRENT REFLECTIONS:")).toBe(true);
+		const timeAt = userText.indexOf("Current local time:");
+		expect(timeAt).toBeGreaterThan(userText.indexOf("observation-marker"));
+		expect(timeAt).toBeLessThan(userText.indexOf("NEW CONVERSATION CHUNK:"));
+	});
+
 	it("derives the timestamp from the cited source entries and ignores a model-supplied one", async () => {
 		const seen: string[][] = [];
 		const loop = fakeAgentLoop(async (_prompts, context) => {

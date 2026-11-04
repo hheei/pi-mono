@@ -518,4 +518,18 @@ describe("V3 reflector agent", () => {
 		const loop = fakeAgentLoop(() => {});
 		await expect(runReflector({ ...baseArgs, agentLoop: loop })).resolves.toBeUndefined();
 	});
+
+	it("throws ReflectorStreamError on stream failure when no reflections were accepted", async () => {
+		for (const stopReason of ["error", "aborted"]) {
+			const loop = fakeAgentLoop(() => {}, [
+				{
+					type: "message_end",
+					message: { role: "assistant", stopReason, errorMessage: "network failure" },
+				},
+			]);
+			await expect(runReflector({ ...baseArgs, agentLoop: loop })).rejects.toThrow(
+				/reflector stream ended with stopReason/,
+			);
+		}
+	});
 });

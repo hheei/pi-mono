@@ -1,7 +1,12 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 
-import { type ResolvedAuth, Runtime } from "../src/runtime.js";
+import {
+	flattenErrorMessageForNotify,
+	MAX_NOTIFY_ERROR_CHARS,
+	type ResolvedAuth,
+	Runtime,
+} from "../src/runtime.js";
 import { testModel } from "./fixtures/model.js";
 
 function modelRegistry(args: { found?: Model<Api>; auth?: ResolvedAuth } = {}) {
@@ -378,6 +383,33 @@ describe("Runtime V3 behavior", () => {
 			headers: { Authorization: "Bearer test" },
 			env: { CLOUDFLARE_ACCOUNT_ID: "abc123" },
 			baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+		});
+	});
+
+	describe("flattenErrorMessageForNotify", () => {
+		it("flattens multiline error JSON into a single line capped at MAX_NOTIFY_ERROR_CHARS", () => {
+			const multiline = `Error: 400 Bad Request
+{
+  "error": {
+    "message": "Model context size exceeded",
+    "type": "invalid_request_error"
+  }
+}`;
+			const flattened = flattenErrorMessageForNotify(multiline);
+			expect(flattened).not.toContain("\n");
+			expect(flattened).not.toContain("\r");
+			expect(flattened).toContain('Error: 400 Bad Request { "error":');
+		});
+
+		it("truncates errors exceeding MAX_NOTIFY_ERROR_CHARS with ellipsis", () => {
+			const longError = "x".repeat(MAX_NOTIFY_ERROR_CHARS + 50);
+			const flattened = flattenErrorMessageForNotify(longError);
+			expect(flattened.length).toBe(MAX_NOTIFY_ERROR_CHARS);
+			expect(flattened.endsWith("…")).toBe(true);
+		});
+
+		it("keeps errors within the limit untouched except whitespace", () => {
+			expect(flattenErrorMessageForNotify("  simple error  ")).toBe("simple error");
 		});
 	});
 });

@@ -44,6 +44,17 @@ export {
 	observationPoolMetrics,
 } from "./pool.js";
 
+export class DropperStreamError extends Error {
+	readonly stopReason: string;
+	constructor(stopReason: string, errorMessage?: string) {
+		super(
+			`dropper stream ended with stopReason "${stopReason}"${errorMessage ? `: ${errorMessage}` : ""}`,
+		);
+		this.name = "DropperStreamError";
+		this.stopReason = stopReason;
+	}
+}
+
 import { textToolResult } from "@hheei/pi-ext-core";
 
 interface RunDropperArgs extends WorkerLoopArgs {
@@ -282,7 +293,7 @@ export async function runDropper(args: RunDropperArgs): Promise<string[] | undef
 		messages: [{ role: "system", content: DROPPER_SYSTEM, timestamp: Date.now() }],
 		tools: [dropObservations as unknown as AgentTool],
 	};
-	await runWorkerAgent("dropper", args, prompts, context);
+	const streamError = await runWorkerAgent("dropper", args, prompts, context);
 	const droppedIds = selectDropCandidates(
 		proposedDropIds,
 		observations,
@@ -319,5 +330,8 @@ export async function runDropper(args: RunDropperArgs): Promise<string[] | undef
 		),
 		maxDropsAllowed,
 	});
+	if (droppedIds.length === 0 && streamError !== undefined) {
+		throw new DropperStreamError(streamError.stopReason, streamError.errorMessage);
+	}
 	return droppedIds.length > 0 ? droppedIds : undefined;
 }

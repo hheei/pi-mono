@@ -365,4 +365,29 @@ describe("visible memory selection", () => {
 
 		expect(previous.size).toBe(12);
 	});
+
+	it("prefers oldest observations when observationsFrom is 'oldest'", () => {
+		const oldObs = observation("aaaaaaaaaaaa", {
+			content: line(),
+			timestamp: "2026-01-01T00:00:00.000Z",
+		});
+		const newObs = observation("bbbbbbbbbbbb", {
+			content: line(),
+			timestamp: "2026-06-01T00:00:00.000Z",
+		});
+		const memory = { observations: [oldObs, newObs], reflections: [] };
+
+		const visibleOld = selectVisibleMemory(memory, {
+			maxTokens: OVERHEAD + obsLineTokens(oldObs) + 5,
+			observationTargetTokens: 1000,
+			observationsFrom: "oldest",
+		});
+		expect(visibleOld.observations.map((o) => o.id)).toEqual(["aaaaaaaaaaaa"]);
+
+		const visibleNew = selectVisibleMemory(memory, {
+			maxTokens: OVERHEAD + obsLineTokens(newObs) + 5,
+			observationTargetTokens: 1000,
+		});
+		expect(visibleNew.observations.map((o) => o.id)).toEqual(["bbbbbbbbbbbb"]);
+	});
 });

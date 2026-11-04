@@ -18,6 +18,8 @@ import {
 	parseDurationToSeconds,
 	readEnvConfig,
 	resolveCompactAfterTokens,
+	resolveCompactionMaxRetainedTokens,
+	resolveWorkerMemoryMaxTokens,
 } from "../src/config.js";
 
 function writeJson(path: string, value: unknown) {
@@ -55,6 +57,7 @@ describe("V3 config", () => {
 			observationsPoolTargetTokens: 10000,
 			agentMaxTurns: 16,
 			agentMaxTokens: 32000,
+			compactionCatchUpMaxChunks: 2,
 			showWorkerNotifications: true,
 			passive: false,
 			debugLog: false,
@@ -406,6 +409,48 @@ describe("V3 config", () => {
 				"pi-ext-memory": { idleCompactionTtl },
 			});
 			expect((await loadConfig(cwd, {})).idleCompactionTtlSeconds).toBeUndefined();
+		});
+	});
+
+	describe("worker memory and compaction retention resolvers", () => {
+		it("resolves worker memory max tokens from config, ratio or fallback", () => {
+			expect(
+				resolveWorkerMemoryMaxTokens({ ...DEFAULTS, workerMemoryMaxTokens: 5000 }, 64000),
+			).toBe(5000);
+			expect(resolveWorkerMemoryMaxTokens(DEFAULTS, 64000)).toBe(16000); // 0.25 * 64000
+			expect(resolveWorkerMemoryMaxTokens(DEFAULTS, undefined)).toBe(16000);
+		});
+
+		it("resolves compaction max retained tokens from config, ratio or fallback", () => {
+			expect(
+				resolveCompactionMaxRetainedTokens(
+					{ ...DEFAULTS, compactionMaxRetainedTokens: 12000 },
+					100000,
+				),
+			).toBe(12000);
+			expect(resolveCompactionMaxRetainedTokens(DEFAULTS, 100000)).toBe(35000); // 0.35 * 100000
+			expect(resolveCompactionMaxRetainedTokens(DEFAULTS, undefined)).toBe(35000);
+		});
+
+		it("loads catch-up chunks and retention tokens from ext_settings.json", async () => {
+			writeJson(join(cwd, ".pi", "ext_settings.json"), {
+				"pi-ext-memory": {
+					compactionCatchUpMaxChunks: 4,
+					compactionMaxRetainedTokens: 40000,
+					workerMemoryMaxTokens: 8000,
+				},
+			});
+			const config = await loadConfig(cwd, {});
+			expect(config.compactionCatchUpMaxChunks).toBe(4);
+			expect(config.compactionMaxRetainedTokens).toBe(40000);
+			expect(config.workerMemoryMaxTokens).toBe(8000);
+		});
+
+		it("allows 0 for compactionCatchUpMaxChunks to disable catch-up", async () => {
+			writeJson(join(cwd, ".pi", "ext_settings.json"), {
+				"pi-ext-memory": { compactionCatchUpMaxChunks: 0 },
+			});
+			expect((await loadConfig(cwd, {})).compactionCatchUpMaxChunks).toBe(0);
 		});
 	});
 });

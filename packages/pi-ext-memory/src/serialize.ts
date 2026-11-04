@@ -9,6 +9,41 @@ export function fmtLocal(d: Date): string {
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+export type SourceTimeline = {
+	byId: Map<string, number>;
+	fallback: number;
+};
+
+export function sourceTimestamps(
+	entries: readonly RenderableEntry[],
+	chunkEntryIds: readonly string[],
+): SourceTimeline {
+	const sent = new Set(chunkEntryIds);
+	const byId = new Map<string, number>();
+	let fallback: number | undefined;
+	for (const entry of entries) {
+		if (!entry.id || !sent.has(entry.id) || entry.timestamp === undefined) continue;
+		const time = new Date(entry.timestamp).getTime();
+		if (Number.isNaN(time)) continue;
+		byId.set(entry.id, time);
+		fallback = time;
+	}
+	return { byId, fallback: fallback ?? Date.now() };
+}
+
+export function earliestSourceTimestamp(
+	timeline: SourceTimeline,
+	sourceEntryIds: readonly string[],
+): string {
+	let earliest: number | undefined;
+	for (const id of sourceEntryIds) {
+		const time = timeline.byId.get(id);
+		if (time === undefined) continue;
+		if (earliest === undefined || time < earliest) earliest = time;
+	}
+	return fmtLocal(new Date(earliest ?? timeline.fallback));
+}
+
 function formatTimestamp(v: number | string | undefined): string {
 	if (v === undefined) return "????-??-?? ??:??";
 	const d = new Date(v);
@@ -69,6 +104,54 @@ function textOnly(content: unknown): string {
 		.join("\n");
 }
 
+type BashExecutionMessage = {
+	role: "bashExecution";
+	command?: unknown;
+	output?: unknown;
+	exitCode?: unknown;
+	cancelled?: unknown;
+	truncated?: unknown;
+	fullOutputPath?: unknown;
+	excludeFromContext?: unknown;
+};
+
+function bashExecutionToText(msg: BashExecutionMessage): string {
+	let text = `Ran \`${String(msg.command ?? "")}\`\n`;
+	text +=
+		typeof msg.output === "string" && msg.output ? `\`\`\`\n${msg.output}\n\`\`\`` : "(no output)";
+	if (msg.cancelled === true) {
+		text += "\n\n(command cancelled)";
+	} else if (typeof msg.exitCode === "number" && msg.exitCode !== 0) {
+		text += `\n\nCommand exited with code ${msg.exitCode}`;
+	}
+	if (msg.truncated === true && typeof msg.fullOutputPath === "string" && msg.fullOutputPath) {
+		text += `\n\n[Output truncated. Full output: ${msg.fullOutputPath}]`;
+	}
+	return text;
+}
+
+function renderPiMessageRole(
+	msg: Record<string, unknown>,
+	time: string,
+	text: (content: unknown) => string,
+): string | null | undefined {
+	switch (msg.role) {
+		case "user":
+		case "assistant":
+		case "toolResult":
+			return undefined;
+		case "bashExecution":
+			if (msg.excludeFromContext === true) return null;
+			return `[User @ ${time}]: ${bashExecutionToText(msg as BashExecutionMessage)}`;
+		case "system":
+			return null;
+		default: {
+			const body = text(msg.content);
+			return body ? `[${String(msg.role)} @ ${time}]: ${body}` : null;
+		}
+	}
+}
+
 function serializeConversation(messages: Message[]): string {
 	return messages
 		.map((msg): string | null => {
@@ -88,6 +171,8 @@ function serializeConversation(messages: Message[]): string {
 				if (!body) return null;
 				return `[Assistant @ ${time}]: ${body}`;
 			}
+			const other = renderPiMessageRole(msg as unknown as Record<string, unknown>, time, textOnly);
+			if (other !== undefined) return other;
 			const text = textOnly(msg.content);
 			return `[Tool result for ${(msg as ToolResultMessage).toolName} @ ${time}]: ${text}`;
 		})
@@ -266,6 +351,10 @@ function renderRecallMessage(entry: RenderableEntry): string | null {
 		if (!body) return null;
 		return `[Assistant @ ${time}]: ${body}`;
 	}
+	const other = renderPiMessageRole(msg as unknown as Record<string, unknown>, time, (content) =>
+		textAndPlaceholders(content),
+	);
+	if (other !== undefined) return other;
 	return `[Tool result: ${(msg as ToolResultMessage).toolName} @ ${time}]: ${textAndPlaceholders(msg.content)}`;
 }
 

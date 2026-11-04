@@ -73,6 +73,14 @@ export type ConsolidationPhase = "observer" | "reflector" | "dropper";
  */
 export type ConsolidationStage = ConsolidationPhase | "enforcer";
 
+export const MAX_NOTIFY_ERROR_CHARS = 200;
+
+export function flattenErrorMessageForNotify(message: string): string {
+	const singleLine = message.replace(/\s+/g, " ").trim();
+	if (singleLine.length <= MAX_NOTIFY_ERROR_CHARS) return singleLine;
+	return `${singleLine.slice(0, MAX_NOTIFY_ERROR_CHARS - 1)}…`;
+}
+
 /**
  * Session-scoped worker spend and run counts, for `/om status`.
  *
@@ -526,7 +534,10 @@ export class Runtime {
 				if (message.includes("stale")) return;
 				if (ctx.hasUI && ctx.ui) {
 					try {
-						ctx.ui.notify(`om: consolidation failed: ${message}`, "warning");
+						ctx.ui.notify(
+							`om: consolidation failed: ${flattenErrorMessageForNotify(message)}`,
+							"warning",
+						);
 					} catch {}
 				}
 			} finally {
@@ -550,7 +561,7 @@ export class Runtime {
 		if (phase === "enforcer") this.lastEnforcerError = message;
 		if (this.lifecycleSignal?.aborted !== true && ctx.hasUI && ctx.ui) {
 			try {
-				ctx.ui.notify(`om: ${phase} failed: ${message}`, "warning");
+				ctx.ui.notify(`om: ${phase} failed: ${flattenErrorMessageForNotify(message)}`, "warning");
 			} catch {}
 		}
 		return message;
