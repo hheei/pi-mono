@@ -332,4 +332,63 @@ describe("ToolGroupView output padding", () => {
 		expect(padded).toHaveLength(flush.length);
 		expect(padded.every((row) => row.startsWith(" ") && !row.startsWith("  "))).toBe(true);
 	});
+
+	test("unresolved nested tool calls (e.g. codemodE) are excluded from category counts", () => {
+		const group = new ToolGroupView(
+			ui(),
+			() => undefined,
+			() => false,
+			() => 0,
+		);
+		const containerMember: Member = {
+			kind: "tool",
+			title: "codemode",
+			status: "ok",
+			completed: true,
+			childCount: 35,
+			children: [
+				...Array.from({ length: 4 }, () => ({
+					title: "grep",
+					status: "ok" as const,
+					resolved: true,
+				})),
+				...Array.from({ length: 31 }, () => ({
+					title: "edit",
+					status: "ok" as const,
+					resolved: true,
+				})),
+				{ title: "codemodE", status: "error" as const, resolved: false },
+			],
+			component: { render: () => ["row"], invalidate() {} },
+		};
+		group.update([containerMember], undefined, [], { startedAt: 0 });
+		const frame = group.render(80).join("\n");
+		expect(frame).toContain("grep ×4 · edit ×31");
+		expect(frame).not.toContain("codemodE");
+		expect(frame).toContain("35 calls");
+		group.dispose();
+	});
+
+	test("a container whose calls were all unresolved does not count as 1 call or enter category", () => {
+		const group = new ToolGroupView(
+			ui(),
+			() => undefined,
+			() => false,
+			() => 0,
+		);
+		const containerMember: Member = {
+			kind: "tool",
+			title: "codemode",
+			status: "ok",
+			completed: true,
+			childCount: 0,
+			component: { render: () => ["row"], invalidate() {} },
+		};
+		group.update([containerMember], undefined, [], { startedAt: 0 });
+		const frame = group.render(80).join("\n");
+		expect(frame).toContain("0 calls");
+		expect(frame).not.toContain("codemode ×");
+		expect(frame).toContain("▸ tools");
+		group.dispose();
+	});
 });

@@ -560,26 +560,33 @@ export class ToolGroupView extends Container {
 			if (member === undefined) continue;
 			listed += 1;
 			if (member.completed !== true) continue;
+			if (member.childCount === 0) continue;
 			if (member.children === undefined) {
 				if (member.title !== undefined)
 					counts.set(member.title, (counts.get(member.title) ?? 0) + 1);
 				continue;
 			}
-			for (const child of member.children)
-				counts.set(child.title, (counts.get(child.title) ?? 0) + 1);
+			for (const child of member.children) {
+				if (child.resolved !== false) counts.set(child.title, (counts.get(child.title) ?? 0) + 1);
+			}
 		}
 		if (listed > 0) {
-			const names = [...counts]
-				.map(
-					([name, count]) =>
-						`${theme.fg("toolTitle", theme.bold(name))} ${theme.fg("dim", `×${count}`)}`,
-				)
-				.join(theme.fg("dim", " · "));
-			push(this.#categoryRow("tools", names === "" ? "tools" : names, ""), {
+			const open = this.#category === "tools";
+			const pin = `${theme.fg("dim", open ? "▾" : "▸")} `;
+			const content =
+				counts.size === 0
+					? theme.fg(open ? "accent" : "text", "tools")
+					: [...counts]
+							.map(
+								([name, count]) =>
+									`${theme.fg("toolTitle", theme.bold(name))} ${theme.fg("dim", `×${count}`)}`,
+							)
+							.join(theme.fg("dim", " · "));
+			push(`${pin}${content}`, {
 				kind: "category",
 				category: "tools",
 			});
-			if (this.#category === "tools") this.#renderTools(tools, width, push, pushBlock);
+			if (open) this.#renderTools(tools, width, push, pushBlock);
 		}
 
 		// The rails bracket the header, categories, and any opened detail; the footer sits below them.

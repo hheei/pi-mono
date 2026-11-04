@@ -70,6 +70,7 @@ export interface ToolViewChild {
 	readonly summary?: string | undefined;
 	readonly status?: ToolStatusKind | undefined;
 	readonly durationMs?: number | undefined;
+	readonly resolved?: boolean | undefined;
 }
 
 export interface ToolViewSpec {

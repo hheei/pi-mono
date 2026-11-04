@@ -303,6 +303,9 @@ describe("python_eval rich presentation", () => {
 		// A failed call that resolved is a failed call; the unresolved one is not a call at all.
 		expect(stripTerminalSequences(presentation.summary)).toBe("0 ok · 1 failed · 1 unknown");
 		expect(presentation.childCount).toBe(1);
+		// presentation.children only lists calls that resolved; unresolved grep is excluded
+		expect(presentation.children).toHaveLength(1);
+		expect(presentation.children?.[0]?.title).toBe("bash");
 	});
 
 	test("a legacy record without resolution facts reports no proven calls", () => {

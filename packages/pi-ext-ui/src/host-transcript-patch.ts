@@ -408,6 +408,13 @@ function attach(
 				const member = toolMember(child, calls);
 				if (member !== undefined) {
 					members.push(member);
+					const result: unknown = Reflect.get(child, "result");
+					if (record(result) && result.usage !== undefined) {
+						const usage = readUsage(result.usage);
+						if (usage !== undefined) {
+							requests.push({ usage });
+						}
+					}
 					continue;
 				}
 			} else if (child instanceof NotifyView) {

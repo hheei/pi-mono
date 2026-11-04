@@ -1700,6 +1700,53 @@ describe("two centralized host seams / original transcript projection", () => {
 		expect(show(f.chat)).toContain(`requests ×1 · ↑${expected}`);
 	});
 
+	test("8 requests sum input, output, cacheRead across the exact request set matching Pi totals", () => {
+		const f = setup();
+		f.chat.children = [
+			assistant(["a"], false, { input: 100, output: 50, cacheRead: 500, cacheWrite: 0 }),
+			f.row("a"),
+			assistant(["b"], false, { input: 200, output: 60, cacheRead: 1000, cacheWrite: 0 }),
+			f.row("b"),
+			assistant(["c"], false, { input: 300, output: 70, cacheRead: 1500, cacheWrite: 0 }),
+			f.row("c"),
+			assistant(["d"], false, { input: 400, output: 80, cacheRead: 2000, cacheWrite: 0 }),
+			f.row("d"),
+			assistant(["e"], false, { input: 500, output: 90, cacheRead: 2500, cacheWrite: 0 }),
+			f.row("e"),
+			assistant(["f"], false, { input: 600, output: 100, cacheRead: 3000, cacheWrite: 0 }),
+			f.row("f"),
+			assistant(["g"], false, { input: 700, output: 110, cacheRead: 3500, cacheWrite: 0 }),
+			f.row("g"),
+			// Request 8: final text answer (non-eligible assistant, flushes group)
+			assistant([], "text", { input: 800, output: 140, cacheRead: 4000, cacheWrite: 0 }),
+		];
+		// Total:
+		// Requests = 8
+		// IN = 100+200+300+400+500+600+700+800 = 3600 -> 3.6k
+		// OUT = 50+60+70+80+90+100+110+140 = 700
+		// R = 500+1000+1500+2000+2500+3000+3500+4000 = 18000 -> 18k
+		// Latest prompt CH = 4000 / (800 + 4000) = 83.3%
+		expect(show(f.chat)).toContain("requests ×8 · ↑3.6k · ↓700 · R18k · CH83.3%");
+	});
+
+	test("a tool result with attached usage is accumulated into requests and token totals", () => {
+		const f = setup();
+		const toolWithUsage = f.row("u1");
+		toolWithUsage.updateResult({
+			content: [{ type: "text", text: "RESULT u1" }],
+			isError: false,
+			usage: { input: 500, output: 200, cacheRead: 1000, cacheWrite: 0 },
+		} as never);
+		f.chat.children = [
+			assistant(["u1", "u2"], false, { input: 1000, output: 100, cacheRead: 0, cacheWrite: 0 }),
+			toolWithUsage,
+			f.row("u2"),
+			assistant([], "text", { input: 200, output: 50, cacheRead: 0, cacheWrite: 0 }),
+		];
+		// 2 assistant requests + 1 tool usage = requests ×3; input = 1000 + 500 + 200 = 1700 (1.7k); output = 100 + 200 + 50 = 350; R = 1.0k
+		expect(show(f.chat)).toContain("requests ×3 · ↑1.7k · ↓350 · R1.0k");
+	});
+
 	test("global expansion shows the raw members and closing it restores the closed frame", () => {
 		const f = setup();
 		f.begin();

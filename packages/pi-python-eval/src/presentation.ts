@@ -246,13 +246,16 @@ export function createPythonEvalPresentation(
 			: [{ railToken: isError ? ("error" as const) : ("success" as const), content: transcript }]),
 	];
 
-	const children: ToolPresentationChild[] = calls.items.map((call) => ({
-		...(call.id === undefined ? {} : { id: call.id }),
-		title: call.name,
-		...(call.summary === "" ? {} : { summary: call.summary }),
-		status: call.failed ? ("error" as const) : ("ok" as const),
-		durationMs: call.durationMs,
-	}));
+	const children: ToolPresentationChild[] = calls.items
+		.filter((call) => call.resolved === true)
+		.map((call) => ({
+			...(call.id === undefined ? {} : { id: call.id }),
+			title: call.name,
+			...(call.summary === "" ? {} : { summary: call.summary }),
+			status: call.failed ? ("error" as const) : ("ok" as const),
+			durationMs: call.durationMs,
+			resolved: true,
+		}));
 	const output = result === undefined ? "" : stripTerminalSequences(agentResultText(result));
 	return {
 		summary,

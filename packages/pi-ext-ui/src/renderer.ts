@@ -237,6 +237,7 @@ function nestedChildren(calls: readonly (CapturedToolCall | NestedCallRecord)[])
 						? ("running" as const)
 						: ("ok" as const),
 				...(call.durationMs === undefined ? {} : { durationMs: call.durationMs }),
+				...(call.resolved === true ? { resolved: true } : {}),
 			};
 		}
 		return {
@@ -252,6 +253,7 @@ function nestedChildren(calls: readonly (CapturedToolCall | NestedCallRecord)[])
 							? ("error" as const)
 							: ("ok" as const),
 			...(call.durationMs === undefined ? {} : { durationMs: call.durationMs }),
+			...(call.resolved === true ? { resolved: true } : {}),
 		};
 	});
 }
@@ -512,7 +514,7 @@ function renderGenericResult(params: {
 				})
 			: undefined;
 
-	const children: ToolViewChild[] = nestedChildren(childCalls);
+	const children: ToolViewChild[] = nestedChildren(resolvedCalls);
 
 	const collapsedRows =
 		codemodeNestedView !== undefined
@@ -815,7 +817,22 @@ function renderOwnedPresentation(params: {
 						.map((line) => theme.fg("error", stripTerminalSequences(line)))
 				: undefined;
 		})(),
-		...(presentation.children === undefined ? {} : { children: presentation.children }),
+		...(presentation.children === undefined
+			? {}
+			: {
+					children: presentation.children
+						.filter((child) => (child as { resolved?: boolean }).resolved !== false)
+						.map((child) => ({
+							...child,
+							...(child.status === "warn"
+								? { status: "warn" as const }
+								: child.status === "error"
+									? { status: "error" as const }
+									: child.status === "running"
+										? { status: "running" as const }
+										: { status: "ok" as const }),
+						})),
+				}),
 		...(presentation.childCount === undefined ? {} : { childCount: presentation.childCount }),
 		sections,
 		outputPad: context.outputPad,
