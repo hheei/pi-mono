@@ -34,7 +34,10 @@ export default function (pi: ExtensionAPI): void {
 				| undefined;
 			// The host owns this setting; a message view that draws its own shell applies the same
 			// value the host applies to its own rows, including the default when it is unset.
-			const outputPad = (): number => (context.pi.getSettings().outputPad === 0 ? 0 : 1);
+			// Rows render after this ctx is stale (reload, new session, fork), so the value is
+			// captured here once instead of read through the ctx on every render.
+			const pad = context.pi.getSettings().outputPad === 0 ? 0 : 1;
+			const outputPad = (): number => pad;
 			const apply = (enabled: boolean): void => {
 				if (context.extension.mode !== "tui") return;
 				if (!enabled) {
