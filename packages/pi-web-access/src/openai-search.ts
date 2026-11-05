@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRecord } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
@@ -106,12 +108,14 @@ export function isOpenAISubscriptionModelSelected(
 	},
 ): boolean {
 	const model = ctx?.model;
+	if (model?.api === "pi-virtual") return true;
 	if (model?.provider === "openai-codex") return true;
 	return model?.provider === "openai" && ctx?.modelRegistry?.isUsingOAuth?.(model) === true;
 }
 
 export function isCurrentModelHostedSearchEligible(ctx?: Pick<ExtensionContext, "model">): boolean {
 	const model = ctx?.model;
+	if (model?.api === "pi-virtual") return true;
 	if (!model || !/^gpt-/iu.test(model.id)) return false;
 	try {
 		resolveCurrentModelSearchTarget(model);
@@ -1006,6 +1010,235 @@ export async function searchWithCurrentModelOpenAI(
 	ctx?: ExtensionContext,
 ): Promise<SearchResponse> {
 	if (!ctx) throw new Error("OpenAI current-model search requires an extension context");
+	if (ctx.model?.api === "pi-virtual") {
+		return searchWithVirtualModel(query, options, ctx);
+	}
 	const auth = await resolveCurrentModelAuth(ctx, options.signal);
 	return runOpenAISearch(query, options, auth, ctx);
+}
+
+async function resolveGoogleRedirect(proxyUrl: string, signal?: AbortSignal): Promise<string> {
+	if (!proxyUrl.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")) return proxyUrl;
+	try {
+		const res = await fetch(proxyUrl, {
+			method: "HEAD",
+			redirect: "manual",
+			signal: AbortSignal.any([AbortSignal.timeout(5000), ...(signal ? [signal] : [])]),
+		});
+		return res.headers.get("location") || proxyUrl;
+	} catch {
+		return proxyUrl;
+	}
+}
+
+export async function searchWithVirtualModel(
+	query: string,
+	options: SearchOptions = {},
+	ctx?: ExtensionContext,
+): Promise<SearchResponse> {
+	if (ctx?.model?.api !== "pi-virtual") {
+		throw new Error("Virtual model search requires a virtual model in extension context");
+	}
+	const model = ctx.model;
+	let accumulatedText = "";
+	const searchResults: SearchResult[] = [];
+	const seenUrls = new Set<string>();
+	const rawGroundingChunks: Array<{ web?: { uri?: string; title?: string } }> = [];
+
+	const prompt = `Search the web for: ${query}. Return a concise answer grounded only in the web results with sources.`;
+
+	const addSearchResult = (url: string, title?: unknown): void => {
+		const cleanUrl = cleanSourceUrl(url);
+		if (!cleanUrl || seenUrls.has(cleanUrl)) return;
+		seenUrls.add(cleanUrl);
+		searchResults.push({
+			title: typeof title === "string" && title.trim() ? title.trim() : cleanUrl,
+			url: cleanUrl,
+			snippet: "",
+		});
+	};
+
+	const simpleOptions = {
+		...(options.signal !== undefined ? { signal: options.signal } : {}),
+		...(ctx.sessionManager?.getSessionId ? { sessionId: ctx.sessionManager.getSessionId() } : {}),
+		transport: "sse" as const,
+		// A provider retry discards results from a previous provider attempt
+		onPayload(payload: unknown, target: Model<Api>) {
+			// A provider retry discards results from a previous provider attempt
+			accumulatedText = "";
+			searchResults.length = 0;
+			seenUrls.clear();
+			rawGroundingChunks.length = 0;
+
+			const targetRecord = isRecord(payload) ? { ...payload } : {};
+			if (
+				target.api === "openai-responses" ||
+				target.api === "openai-codex-responses" ||
+				target.api === "azure-openai-responses" ||
+				target.provider === "openai" ||
+				target.provider === "openai-codex" ||
+				target.provider === "xai"
+			) {
+				const request: Record<string, unknown> = {
+					...targetRecord,
+					tools: [buildWebSearchTool(options)],
+					include: ["web_search_call.action.sources"],
+					store: false,
+				};
+				if (target.provider === "xai") {
+					delete request.reasoning;
+				}
+				return request;
+			}
+			if (target.api === "anthropic-messages") {
+				return {
+					...targetRecord,
+					tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 10 }],
+				};
+			}
+			if (target.api === "google-generative-ai") {
+				const config = isRecord(targetRecord.config) ? { ...targetRecord.config } : {};
+				return {
+					...targetRecord,
+					config: {
+						...config,
+						tools: [{ googleSearch: {} }],
+					},
+				};
+			}
+			throw new Error(
+				`Virtual model ${model.provider}/${model.id} routed to an unsupported search model: ${target.provider}/${target.id} (${target.api})`,
+			);
+		},
+		onProviderStreamEvent(event: unknown) {
+			if (!event || typeof event !== "object") return;
+			const ev = event as Record<string, unknown>;
+
+			// Google events
+			if (Array.isArray(ev.candidates)) {
+				const candidate = ev.candidates[0] as
+					| {
+							content?: { parts?: Array<{ text?: string; thought?: boolean }> };
+							groundingMetadata?: {
+								groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+							};
+					  }
+					| undefined;
+				if (candidate?.content?.parts) {
+					for (const part of candidate.content.parts) {
+						if (typeof part.text === "string" && !part.thought) {
+							accumulatedText += part.text;
+						}
+					}
+				}
+				if (candidate?.groundingMetadata?.groundingChunks) {
+					for (const chunk of candidate.groundingMetadata.groundingChunks) {
+						rawGroundingChunks.push(chunk);
+					}
+				}
+			}
+
+			// OpenAI events
+			if (ev.type === "response.output_text.delta" && typeof ev.delta === "string") {
+				accumulatedText += ev.delta;
+			}
+			if (
+				ev.type === "response.output_item.done" &&
+				isRecord(ev.item) &&
+				ev.item.type === "web_search_call"
+			) {
+				const action = isRecord(ev.item.action) ? ev.item.action : undefined;
+				if (Array.isArray(action?.sources)) {
+					for (const s of action.sources) {
+						if (isRecord(s) && typeof s.url === "string") {
+							addSearchResult(s.url, s.title);
+						}
+					}
+				}
+			}
+			if (
+				ev.type === "url_citation" ||
+				(isRecord(ev.annotation) && ev.annotation.type === "url_citation")
+			) {
+				const citation = isRecord(ev.annotation) ? ev.annotation : ev;
+				if (typeof citation.url === "string") {
+					addSearchResult(citation.url, citation.title);
+				}
+			}
+
+			// Anthropic events
+			if (
+				ev.type === "content_block_delta" &&
+				isRecord(ev.delta) &&
+				ev.delta.type === "text_delta" &&
+				typeof ev.delta.text === "string"
+			) {
+				accumulatedText += ev.delta.text;
+			}
+			if (
+				ev.type === "content_block_start" &&
+				isRecord(ev.content_block) &&
+				ev.content_block.type === "web_search_tool_result"
+			) {
+				const content = ev.content_block.content;
+				if (Array.isArray(content)) {
+					for (const item of content) {
+						if (isRecord(item) && typeof item.url === "string") {
+							addSearchResult(item.url, item.title);
+						}
+					}
+				}
+			}
+		},
+	};
+
+	const response = await ctx.modelRegistry
+		.streamSimple(
+			model,
+			{
+				messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
+			},
+			simpleOptions,
+		)
+		.result();
+
+	if (response.stopReason === "error" || response.stopReason === "aborted") {
+		throw new Error(response.errorMessage || "Web search request failed");
+	}
+
+	for (const chunk of rawGroundingChunks) {
+		let uri = chunk.web?.uri;
+		if (uri) {
+			if (uri.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")) {
+				uri = await resolveGoogleRedirect(uri, options.signal);
+			}
+			addSearchResult(uri, chunk.web?.title);
+		}
+	}
+
+	let answer = accumulatedText.trim();
+	if (!answer && Array.isArray(response.content)) {
+		answer = response.content
+			.filter(
+				(p): p is { type: "text"; text: string } =>
+					isRecord(p) && p.type === "text" && typeof p.text === "string",
+			)
+			.map((p) => p.text)
+			.join("\n")
+			.trim();
+	}
+
+	if (!answer && searchResults.length === 0) {
+		throw new Error("Virtual model web search returned no answer or sources");
+	}
+
+	const maxResults =
+		typeof options.numResults === "number" && Number.isFinite(options.numResults)
+			? Math.max(1, Math.floor(options.numResults))
+			: searchResults.length;
+
+	return {
+		answer,
+		results: searchResults.slice(0, maxResults),
+	};
 }

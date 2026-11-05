@@ -1,3 +1,4 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "@hheei/pi-ext-core";
 import pLimit from "p-limit";
 import type TurndownService from "turndown";
@@ -496,6 +497,7 @@ export interface ExtractOptions {
 	/** "same-origin" refuses cross-origin redirects and extraction paths whose redirect
 	 * chain cannot be observed. fetchContent.redirects in config is a floor. */
 	redirects?: RedirectPolicy | undefined;
+	extensionContext?: ExtensionContext | undefined;
 }
 
 /** Resolve the direct HTTP/Jina fetch budget, with a per-call override taking precedence. */
@@ -921,10 +923,13 @@ const PROVIDER_RUNNERS: Record<Exclude<FetchProvider, "http">, ProviderRunner> =
 		}
 	},
 	deepseek: async (context) =>
-		isDeepSeekAvailable()
+		isDeepSeekAvailable(context.options?.extensionContext)
 			? extractWithDeepSeek(context.url, context.signal, {
 					timeoutMs: context.options?.timeoutMs,
 					...(context.lookup ? { lookup: context.lookup } : {}),
+					...(context.options?.extensionContext
+						? { extensionContext: context.options.extensionContext }
+						: {}),
 				})
 			: null,
 };

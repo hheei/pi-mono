@@ -420,7 +420,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		keenable: allowedProviders.has("keenable") && isKeenableAvailable(),
 		ceramic: allowedProviders.has("ceramic") && isCeramicAvailable(),
 		linkup: allowedProviders.has("linkup") && isLinkupAvailable(),
-		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(),
+		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(ctx),
 	};
 	return {
 		all: ALL_SEARCH_PROVIDERS.some((provider) =>

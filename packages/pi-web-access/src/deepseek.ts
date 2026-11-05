@@ -1,3 +1,4 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "@hheei/pi-ext-core";
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
@@ -17,8 +18,11 @@ import {
 	readWebSearchSection,
 } from "./utils.ts";
 
-const DEEPSEEK_SEARCH_URL = "https://api.deepseek.com/v1/tools/search";
-const DEEPSEEK_FETCH_URL = "https://api.deepseek.com/v1/tools/fetch";
+export function resolveDeepSeekApiRoot(baseUrl?: string): string {
+	const base = (baseUrl || "https://api.deepseek.com").replace(/\/+$/, "");
+	return base.replace(/\/(?:anthropic|v\d+)(?:\/v\d+)?$/i, "");
+}
+
 const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 30_000;
 const FETCH_TIMEOUT_MS = 60_000;
@@ -35,6 +39,7 @@ const RECENCY_DAYS: Record<NonNullable<SearchOptions["recencyFilter"]>, number> 
 
 interface WebSearchConfig {
 	deepseekApiKey?: unknown;
+	deepseekBaseUrl?: unknown;
 }
 
 interface DeepSeekResult {
@@ -47,28 +52,84 @@ interface DeepSeekResult {
 
 interface DeepSeekSearchOptions extends SearchOptions {
 	includeContent?: boolean | undefined;
+	extensionContext?: ExtensionContext | undefined;
 }
 
 function loadConfig(): WebSearchConfig {
 	return readWebSearchSection() as WebSearchConfig;
 }
 
-async function requireApiKey(signal?: AbortSignal): Promise<string> {
+export interface DeepSeekAuth {
+	apiKey: string;
+	root: string;
+	headers?: Record<string, string | null>;
+}
+
+export async function resolveDeepSeekAuth(
+	ctx?: ExtensionContext,
+	signal?: AbortSignal,
+): Promise<DeepSeekAuth | undefined> {
+	const config = loadConfig();
+	const configuredKey = config.deepseekApiKey;
+	const configuredBaseUrl =
+		typeof config.deepseekBaseUrl === "string" && config.deepseekBaseUrl.trim()
+			? config.deepseekBaseUrl.trim()
+			: undefined;
+
+	if (ctx) {
+		try {
+			const models = ctx.modelRegistry.getAll();
+			const model = models.find((m) => m.provider === "deepseek");
+			if (model) {
+				const resolved = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+				if (resolved.ok && resolved.apiKey) {
+					const baseUrl = configuredBaseUrl ?? resolved.baseUrl ?? model.baseUrl;
+					return {
+						apiKey: resolved.apiKey,
+						root: resolveDeepSeekApiRoot(baseUrl),
+						...(resolved.headers ? { headers: resolved.headers } : {}),
+					};
+				}
+			}
+		} catch {
+			// Fall through
+		}
+	}
+
+	const hasSource = hasCredentialSource({
+		provider: "DeepSeek",
+		configuredValue: configuredKey,
+		environmentValue: process.env.DEEPSEEK_API_KEY,
+	});
+	if (!hasSource) return undefined;
+
 	const apiKey = await resolveCredential({
 		provider: "DeepSeek",
-		configuredValue: loadConfig().deepseekApiKey,
+		configuredValue: configuredKey,
 		environmentValue: process.env.DEEPSEEK_API_KEY,
 		signal,
 	});
-	if (!apiKey) {
+	if (!apiKey) return undefined;
+
+	const baseUrl = configuredBaseUrl ?? process.env.DEEPSEEK_BASE_URL;
+	return {
+		apiKey,
+		root: resolveDeepSeekApiRoot(baseUrl),
+	};
+}
+
+async function requireAuth(ctx?: ExtensionContext, signal?: AbortSignal): Promise<DeepSeekAuth> {
+	const auth = await resolveDeepSeekAuth(ctx, signal);
+	if (!auth) {
 		throw new Error(
 			"DeepSeek API key not found. Either:\n" +
-				`  1. Create ${CONFIG_PATH} with { "deepseekApiKey": "your-key" }\n` +
-				"  2. Set DEEPSEEK_API_KEY environment variable\n" +
+				"  1. Run /login in pi and select DeepSeek\n" +
+				`  2. Create ${CONFIG_PATH} with { "deepseekApiKey": "your-key" }\n` +
+				"  3. Set DEEPSEEK_API_KEY environment variable\n" +
 				"Get a key at https://platform.deepseek.com/api_keys",
 		);
 	}
-	return apiKey;
+	return auth;
 }
 
 // DeepSeek documents `site:` joined with OR, `-site:`, and `after:<date>` as query operators.
@@ -214,12 +275,51 @@ function describeError(body: string): string {
 	return body;
 }
 
-export function isDeepSeekAvailable(): boolean {
-	return hasCredentialSource({
-		provider: "DeepSeek",
-		configuredValue: loadConfig().deepseekApiKey,
-		environmentValue: process.env.DEEPSEEK_API_KEY,
-	});
+function formatDeepSeekHttpError(
+	status: number,
+	detail: string,
+	label: "search" | "fetch",
+): string {
+	if (status === 401) {
+		return "No DeepSeek API key found. Run /login in pi and select DeepSeek, or set DEEPSEEK_API_KEY.";
+	}
+	if (status === 402) {
+		return `DeepSeek ${label} failed: insufficient account balance. Top up the DeepSeek account and retry.`;
+	}
+	if (status === 403) {
+		return `DeepSeek ${label} was rejected by security policy: ${detail}`;
+	}
+	if (status === 404 && label === "fetch") {
+		return `DeepSeek fetch could not retrieve usable page content: ${detail}`;
+	}
+	if (status === 429) {
+		return `DeepSeek ${label} rate limit exceeded (5 QPS per account). Wait and retry: ${detail}`;
+	}
+	return `DeepSeek ${label} error ${status}: ${detail}`;
+}
+
+export function isDeepSeekAvailable(ctx?: ExtensionContext): boolean {
+	if (
+		hasCredentialSource({
+			provider: "DeepSeek",
+			configuredValue: loadConfig().deepseekApiKey,
+			environmentValue: process.env.DEEPSEEK_API_KEY,
+		})
+	) {
+		return true;
+	}
+	if (ctx) {
+		try {
+			const models = ctx.modelRegistry.getAll();
+			const model = models.find((m) => m.provider === "deepseek");
+			if (model && ctx.modelRegistry.hasConfiguredAuth(model)) {
+				return true;
+			}
+		} catch {
+			// Fall through
+		}
+	}
+	return false;
 }
 
 export async function searchWithDeepSeek(
@@ -227,22 +327,28 @@ export async function searchWithDeepSeek(
 	options: DeepSeekSearchOptions = {},
 ): Promise<SearchResponse> {
 	const builtQuery = buildQuery(query, options);
-	const apiKey = await requireApiKey(options.signal);
+	const auth = await requireAuth(options.extensionContext, options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	let response: Response;
 	let entries: DeepSeekResult[];
 	try {
+		const headers: Record<string, string> = {
+			Accept: "application/json",
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${auth.apiKey}`,
+		};
+		if (auth.headers) {
+			for (const [key, value] of Object.entries(auth.headers)) {
+				if (value !== null && value !== undefined) headers[key] = value;
+			}
+		}
 		response = await fetchWithCredentialRedirects(
-			DEEPSEEK_SEARCH_URL,
+			`${auth.root}/v1/tools/search`,
 			{
 				method: "POST",
-				headers: {
-					Accept: "application/json",
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${apiKey}`,
-				},
+				headers,
 				body: JSON.stringify({
 					query: builtQuery,
 					count: numResults,
@@ -250,14 +356,14 @@ export async function searchWithDeepSeek(
 				}),
 				signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
 			},
-			["Authorization"],
+			["Authorization", ...Object.keys(auth.headers ?? {})],
 		);
 		if (!response.ok) {
-			const errorText = redactCredential(describeError(await response.text()), apiKey).slice(
+			const errorText = redactCredential(describeError(await response.text()), auth.apiKey).slice(
 				0,
 				300,
 			);
-			throw new Error(`DeepSeek error ${response.status}: ${errorText}`);
+			throw new Error(formatDeepSeekHttpError(response.status, errorText, "search"));
 		}
 		let rawData: unknown;
 		try {
@@ -278,13 +384,13 @@ export async function searchWithDeepSeek(
 		const outgoing = providerTimeout
 			? new Error(`DeepSeek request timed out after ${Math.round(SEARCH_TIMEOUT_MS / 1000)}s`)
 			: (() => {
-					const redactedMessage = redactCredential(message, apiKey);
+					const redactedMessage = redactCredential(message, auth.apiKey);
 					if (redactedMessage === message && err instanceof Error) return err;
 					const redactedError = new Error(redactedMessage);
 					if (err instanceof Error) redactedError.name = err.name;
 					return redactedError;
 				})();
-		activityMonitor.logError(activityId, redactCredential(errorMessage(outgoing), apiKey));
+		activityMonitor.logError(activityId, redactCredential(errorMessage(outgoing), auth.apiKey));
 		throw outgoing;
 	}
 	activityMonitor.logComplete(activityId, response.status);
@@ -333,7 +439,7 @@ export async function extractWithDeepSeek(
 	signal?: AbortSignal,
 	options: ExtractOptions = {},
 ): Promise<ExtractedContent | null> {
-	const apiKey = await requireApiKey(signal);
+	const auth = await requireAuth(options.extensionContext, signal);
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
 	const timeoutSignal = AbortSignal.timeout(timeoutMs);
@@ -345,26 +451,32 @@ export async function extractWithDeepSeek(
 			domainPolicy: loadFetchContentDomainPolicy(),
 			...(options.lookup ? { lookup: options.lookup } : {}),
 		});
+		const headers: Record<string, string> = {
+			Accept: "application/json",
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${auth.apiKey}`,
+		};
+		if (auth.headers) {
+			for (const [key, value] of Object.entries(auth.headers)) {
+				if (value !== null && value !== undefined) headers[key] = value;
+			}
+		}
 		const response = await fetchWithCredentialRedirects(
-			DEEPSEEK_FETCH_URL,
+			`${auth.root}/v1/tools/fetch`,
 			{
 				method: "POST",
-				headers: {
-					Accept: "application/json",
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${apiKey}`,
-				},
+				headers,
 				body: JSON.stringify({ url }),
 				signal: signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal,
 			},
-			["Authorization"],
+			["Authorization", ...Object.keys(auth.headers ?? {})],
 		);
 		if (!response.ok) {
-			const errorText = redactCredential(describeError(await response.text()), apiKey).slice(
+			const errorText = redactCredential(describeError(await response.text()), auth.apiKey).slice(
 				0,
 				300,
 			);
-			throw new Error(`DeepSeek Fetch error ${response.status}: ${errorText}`);
+			throw new Error(formatDeepSeekHttpError(response.status, errorText, "fetch"));
 		}
 		let rawData: unknown;
 		try {
@@ -397,11 +509,11 @@ export async function extractWithDeepSeek(
 			activityMonitor.logComplete(activityId, 0);
 			throw new Error("Aborted");
 		}
-		activityMonitor.logError(activityId, redactCredential(message, apiKey));
+		activityMonitor.logError(activityId, redactCredential(message, auth.apiKey));
 		if (err instanceof Error && err.name === "TimeoutError") {
 			throw new Error(`DeepSeek Fetch request timed out after ${Math.round(timeoutMs / 1000)}s`);
 		}
-		const redactedMessage = redactCredential(message, apiKey);
+		const redactedMessage = redactCredential(message, auth.apiKey);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

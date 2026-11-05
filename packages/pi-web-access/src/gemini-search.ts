@@ -656,7 +656,7 @@ async function isResolvedProviderAvailable(
 	if (provider === "keenable") return isKeenableAvailable();
 	if (provider === "ceramic") return isCeramicAvailable();
 	if (provider === "linkup") return isLinkupAvailable();
-	if (provider === "deepseek") return isDeepSeekAvailable();
+	if (provider === "deepseek") return isDeepSeekAvailable(options.extensionContext);
 	if (provider === "xcrawl") return isXcrawlAvailable();
 	if (provider === "perplexity") return isPerplexityAvailable();
 	if (provider === "searxng") return isSearXNGAvailable();
