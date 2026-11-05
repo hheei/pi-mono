@@ -222,11 +222,11 @@ export default function(pi) {
 			settled: expect.stringMatching(/collapse views · \d+s · 6 calls/),
 			expandedText: expect.stringContaining("second line"),
 		});
-		// The footer closes the block, one colored padding row and one blank separator follow, then the
-		// unit the block keeps outside.
+		// The footer closes the block; its colored padding row is the single separator before the
+		// outside unit. No second blank row belongs to the host.
 		expect(observed).toMatchObject({
-			text: expect.stringMatching(/requests ×1 · ↑— · ↓— *\n *\n\n *▸ ✓ read/),
-			settled: expect.stringMatching(/requests ×2[^\n]*\n *\n\n/),
+			text: expect.stringMatching(/requests ×1 · ↑— · ↓— *\n\n *▸ ✓ read/),
+			settled: expect.stringMatching(/requests ×2[^\n]*\n\n *Tool output: collapsed/),
 		});
 		const resultText = JSON.stringify(observed);
 		expect(observed).toMatchObject({ expandedText: expect.stringContaining("DONE BODY") });

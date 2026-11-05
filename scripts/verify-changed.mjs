@@ -113,12 +113,18 @@ if (buildPackages.length > 0) {
 }
 
 const testTargets = [];
+const integrationTargets = [];
 for (const [pkgDir, pkgInfo] of affectedPackages.entries()) {
-	const testFiles = pkgInfo.files.filter((f) => /\.(test|spec)\.[tj]sx?$/.test(f));
+	const testFiles = pkgInfo.files.filter(
+		(f) => f.startsWith(`${pkgDir}/test/`) && f.endsWith(".test.ts"),
+	);
 	if (testFiles.length > 0) {
 		testTargets.push(...testFiles);
-	} else {
+	} else if (pkgInfo.files.some((f) => !f.startsWith(`${pkgDir}/test-integration/`))) {
 		testTargets.push(pkgDir);
+	}
+	if (pkgInfo.files.some((f) => f.startsWith(`${pkgDir}/test-integration/`))) {
+		integrationTargets.push(pkgDir);
 	}
 }
 
@@ -130,6 +136,17 @@ if (testTargets.length > 0) {
 		cwd: repoRoot,
 		stdio: "inherit",
 	});
+}
+if (integrationTargets.length > 0) {
+	console.log("\n[verify-changed] Running affected integration tests...");
+	execFileSync(
+		"pnpm",
+		["exec", "vitest", "run", "-c", "vitest.integration.config.ts", ...integrationTargets],
+		{
+			cwd: repoRoot,
+			stdio: "inherit",
+		},
+	);
 }
 
 // Auto-update graphify if code files were modified
