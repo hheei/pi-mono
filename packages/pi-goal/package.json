@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-goal",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Session-scoped goal commitments with native autonomy continuation and owned review.",
 	"type": "module",
 	"main": "dist/index.js",

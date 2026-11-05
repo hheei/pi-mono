@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-web-access",
-	"version": "0.3.1",
+	"version": "0.4.0",
 	"description": "Web search, URL fetching, GitHub repo extraction, and content tools for Pi.",
 	"type": "module",
 	"main": "dist/index.js",
