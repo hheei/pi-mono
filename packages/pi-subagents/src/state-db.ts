@@ -13,7 +13,7 @@ export function defaultStatePath(): string {
  * instead of being rewritten: this file is runtime state, but silently discarding another build's
  * records is worse than failing to start.
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const TABLES = `
 CREATE TABLE IF NOT EXISTS children (
@@ -40,6 +40,14 @@ CREATE TABLE IF NOT EXISTS commands (
   error_code TEXT,
   error TEXT,
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS owned_children (
+  parent_session_id TEXT NOT NULL,
+  child_id TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  incarnation TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (parent_session_id, child_id)
 );
 CREATE TABLE IF NOT EXISTS delegations (
   parent_session_id TEXT NOT NULL,
@@ -249,6 +257,70 @@ export function replaceChild(
 		`UPDATE children SET record = ?
 		 WHERE parent_session_id = ? AND subagent_id = ?`,
 	).run(record, parentSessionId, subagentId);
+}
+
+/** One child a consumer's scope owns, and the provider incarnation that recorded it. */
+export interface OwnedChildRow {
+	readonly childId: string;
+	readonly ownerId: string;
+	readonly incarnation: string;
+}
+
+/**
+ * Written before a child is created and removed only after its runtime is confirmed gone, so a
+ * provider that dies in between leaves evidence instead of an ordinary child nobody owns.
+ */
+export function insertOwnedChild(
+	db: DatabaseSync,
+	parentSessionId: string,
+	row: OwnedChildRow,
+): void {
+	db.prepare(
+		`INSERT INTO owned_children (parent_session_id, child_id, owner_id, incarnation, created_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT (parent_session_id, child_id) DO UPDATE SET
+		   owner_id = excluded.owner_id, incarnation = excluded.incarnation`,
+	).run(parentSessionId, row.childId, row.ownerId, row.incarnation, Date.now());
+}
+
+export function deleteOwnedChild(db: DatabaseSync, parentSessionId: string, childId: string): void {
+	db.prepare("DELETE FROM owned_children WHERE parent_session_id = ? AND child_id = ?").run(
+		parentSessionId,
+		childId,
+	);
+}
+
+/** The current claim for one child, read fresh: a claim written after this provider started. */
+export function readOwnedChild(
+	db: DatabaseSync,
+	parentSessionId: string,
+	childId: string,
+): OwnedChildRow | undefined {
+	const row = db
+		.prepare(
+			"SELECT child_id, owner_id, incarnation FROM owned_children WHERE parent_session_id = ? AND child_id = ?",
+		)
+		.get(parentSessionId, childId) as
+		| { child_id: string; owner_id: string; incarnation: string }
+		| undefined;
+	if (row === undefined) return undefined;
+	return { childId: row.child_id, ownerId: row.owner_id, incarnation: row.incarnation };
+}
+
+export function listOwnedChildren(
+	db: DatabaseSync,
+	parentSessionId: string,
+): readonly OwnedChildRow[] {
+	const rows = db
+		.prepare(
+			"SELECT child_id, owner_id, incarnation FROM owned_children WHERE parent_session_id = ? ORDER BY created_at",
+		)
+		.all(parentSessionId) as Array<{ child_id: string; owner_id: string; incarnation: string }>;
+	return rows.map((row) => ({
+		childId: row.child_id,
+		ownerId: row.owner_id,
+		incarnation: row.incarnation,
+	}));
 }
 
 export function readMeta(

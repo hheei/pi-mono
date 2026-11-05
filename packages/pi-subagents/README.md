@@ -30,6 +30,76 @@ and id, and continuing an agent always steers.
 
 SubagentManager and its SQLite ledger own child conversation state, runtime leases, recovery, and reports. No pi-ext-tools task service is required. Only delivery batching is shared through ext-core BackgroundDelivery. Child reports arrive automatically; do not poll status to detect completion. Bash uses separate `bg_bash_*` tools. Deferred agent tools are loaded via `tool_search`; `before_agent_start` writes the `subagents` bullet into the structured prompt's `optional_tools` section. Diagnostics describe blockers, failed turns, or uncertain runtime state.
 
+## Owned scopes (`@hheei/pi-subagents/ownership`)
+
+A consumer that must end exactly the work it started (pi-goal's independent review) opens an owned
+scope instead of calling the tools itself. The subpath has no registration side effect: importing it
+only gives access to the service key and its types.
+
+```ts
+const service = getService(pi, SUBAGENT_OWNERSHIP_SERVICE); // immediate lookup, may be undefined
+const scope = service?.openScope(`${runId}:review:${attempt}`);
+const handle = await scope.delegate({ agent: "reviewer", task }, ctx, signal); // ctx: the calling tool's
+const { status, message } = await handle.settlement;                          // ExtensionToolContext
+const close = await scope.close("goal paused"); // { closed, failures }
+```
+
+Contract:
+
+- **Tool pipeline, not a private dispatch.** `delegate` runs the registered `agents_delegate` tool
+  through `ctx.executeTool`, so validation, tool hooks and permissions are the same ones a model
+  call gets. `ctx` is used for that call and never retained; `signal` cancels the call.
+- **Ownership is bound to the call.** The owner travels on the dispatch's own signal rather than in
+  the tool arguments, so a `tool_call` hook that rewrites the arguments can neither drop an owner
+  (the child stays owned and is still stopped by `close`) nor invent one (the call is refused before
+  anything is launched). A request that names an owner without that binding is refused, not run.
+- **Owned work is headless.** An owned delegation always asks for background placement, so the
+  reviewer runs without a panel even when the native probe found a presentation host. Ordinary
+  delegations keep their automatic placement.
+- **A scope owns an identity, not a child.** The owner id is the caller's; opening the same id again
+  while its scope is live returns that scope. A cleaned scope leaves the registry, so a later
+  attempt can open the same owner id again. A scope with unconfirmed cleanup stays and refuses new
+  work until a retried `close()` confirms it.
+- **An owned turn always creates a new child.** There is no way to claim an agent a human started;
+  `id` is refused with an owner token, and an owned child is not available to `agents_delegate`,
+  steering, or MCP reuse while the claim is live.
+- **Durable before the child exists.** The claim is written to `state.sqlite` (`owned_children`)
+  during the launch reservation, before bootstrap or spawn, together with the provider incarnation
+  that recorded it. That incarnation holds its own lock under `locks/owners/`; a child's writer lock
+  is not evidence about its owner.
+- **The ledger is read at every decision.** Claims are never decided from a startup snapshot: a
+  child another provider claims *after* this one recovered is still recognized as owned, so this
+  provider will not stop, reuse, or report on work a live owner holds. A retained foreign claim is
+  re-read against the owner's own lock on every decision and every recovery retry: a confirmed free
+  lock means that owner will never clean up, so the row becomes an orphan this provider stops
+  through the same confirmed path before the child is free again. The child's own writer lock is
+  never evidence about its owner — the child outlives the provider that started it. The same
+  reading releases
+  the opposite: a recovered claim is only a view of the owner's durable row, so when that row is
+  gone the child is ordinary here again — reusable, stoppable, and its next report reaches the
+  parent conversation. Ownership this provider took on itself is never dropped that way: an
+  adopted child stays its cleanup responsibility even if the row disappears.
+- **Crash recovery stops instead of adopting.** A provider start claims every owned row of its
+  session. Rows whose owner lock is free are orphans: they are stopped and their claims retired,
+  and they are never reopened, adopted, or reported as ordinary children. Rows whose owner lock is
+  held belong to a live provider: they are left running and are never taken over. A child that
+  cannot be confirmed stopped keeps its claim, stays unavailable, and is retried by the next
+  recovery.
+- **A report is not the end of a runtime.** The owner's settlement is routed out of the parent
+  conversation, but `close()` still stops every child it owns and drops the claim only after the
+  stop is confirmed. A late report of a retired child is consumed; once the child is given new work
+  by anyone else, its reports reach the parent again.
+- **Closing is synchronous first.** `close()` marks the scope closed before its first `await`, so a
+  dispatch that has not reserved yet is refused, and a dispatch already in flight is drained (its
+  claim is then stopped) rather than left behind. A failed stop is reported in `failures` and is
+  retried by calling `close()` again; a successful close is final.
+- **An explicit human stop stays allowed.** `agents_stop` on an owned child ends it and settles the
+  owner's wait as `stopped`; it is refused only when another live provider incarnation owns the
+  child.
+- **Teardown order is internal.** Provider shutdown closes owned scopes before it releases local
+  connections, in one resource, so extension teardown order cannot leave an owned child talking to
+  a closed transport.
+
 ## Child execution and reporting
 
 Subagents communicate with the parent through the `commands` table in `state.sqlite`, with each child holding a SQLite process lock that proves its writer is alive:

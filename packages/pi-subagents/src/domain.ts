@@ -273,6 +273,12 @@ export interface DelegateSubagentInput {
 	readonly agent?: string;
 	/** Only used when creating a child; ignored when id is supplied. */
 	readonly cwd?: string;
+	/**
+	 * Opaque owned-scope token. Only a consumer that ends the child itself sets it, and an owned
+	 * delegation always creates a new child; ordinary callers omit it, which is what makes an owned
+	 * child unavailable to them.
+	 */
+	readonly owner?: string;
 }
 
 /** True when a manager call returned a structured failure instead of a value. */

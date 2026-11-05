@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import { StandaloneControllerError, startStandaloneController } from "../src/controller.js";
 import { holdProcessLock } from "../src/process-lock.js";
+import { withoutInheritedChildIdentity } from "./helpers/bridge-env.js";
+
+withoutInheritedChildIdentity();
 
 test("a standalone controller keeps one parent session and refuses a second owner", async () => {
 	const workspace = await mkdtemp(join(tmpdir(), "pi-subagents-controller-workspace-"));

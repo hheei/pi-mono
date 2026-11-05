@@ -53,6 +53,13 @@ const delegateSchema = Type.Object(
 		cwd: Type.Optional(
 			Type.String({ description: "Working directory for a new agent; ignored with id." }),
 		),
+		owner: Type.Optional(
+			Type.String({
+				minLength: 1,
+				description:
+					"Internal: owned scope token for a programmatic consumer. Ordinary delegation omits it, and an owned delegation always creates a new agent.",
+			}),
+		),
 	},
 	{ additionalProperties: false },
 );

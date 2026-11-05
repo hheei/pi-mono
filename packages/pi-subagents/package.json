@@ -1,12 +1,16 @@
 {
 	"name": "@hheei/pi-subagents",
-	"version": "0.10.1",
+	"version": "0.10.2",
 	"description": "Independent background Pi subagent sessions with durable identity and RPC control.",
 	"type": "module",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
 	"exports": {
-		".": "./dist/index.js"
+		".": "./dist/index.js",
+		"./ownership": {
+			"types": "./dist/ownership.d.ts",
+			"default": "./dist/ownership.js"
+		}
 	},
 	"files": [
 		"dist",

@@ -1,0 +1,59 @@
+{
+	"name": "@hheei/pi-goal",
+	"version": "0.1.0",
+	"description": "Session-scoped goal commitments with native autonomy continuation and owned review.",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"pi": {
+		"extensions": [
+			"dist/extension.js"
+		]
+	},
+	"scripts": {
+		"build": "node -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+		"prepack": "pnpm run build"
+	},
+	"keywords": [
+		"pi",
+		"pi-package",
+		"pi-extension",
+		"goal",
+		"autonomy"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/hheei/pi-mono.git",
+		"directory": "packages/pi-goal"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hheei/pi-ext-core": "workspace:^",
+		"@hheei/pi-subagents": "workspace:^"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": ">=1.5.0",
+		"@earendil-works/pi-tui": ">=1.5.0",
+		"typebox": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-ai": "^1.5.0",
+		"@earendil-works/pi-coding-agent": "^1.5.0",
+		"@earendil-works/pi-tui": "^1.5.0",
+		"@hheei/pi-subagents": "workspace:^"
+	}
+}
