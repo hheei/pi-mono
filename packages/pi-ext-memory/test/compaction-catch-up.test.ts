@@ -296,7 +296,7 @@ describe("catch-up coverage truthfulness", () => {
 		await run("u4");
 
 		expect(mockAgents.runObserver).toHaveBeenCalledTimes(1);
-		const allowed = mockAgents.runObserver.mock.calls[0][0].allowedSourceEntryIds;
+		const allowed = mockAgents.runObserver.mock.calls[0]![0].allowedSourceEntryIds;
 		expect(allowed[0]).toBe("u1");
 		expect(allowed).toEqual(["u1", "a1", "u2", "a2", "u3", "a3"]);
 	});

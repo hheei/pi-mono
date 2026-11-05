@@ -153,7 +153,7 @@ describe("compaction hook when the observer is behind Pi's cut", () => {
 
 		expect(result).toBeUndefined();
 		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
-		const [message, level] = ctx.ui.notify.mock.calls[0];
+		const [message, level] = ctx.ui.notify.mock.calls[0]!;
 		expect(level).toBe("warning");
 		expect(message).toContain("observer has not reached 2 source entries");
 		expect(message).toContain("exceeds the ~1-token budget");
@@ -166,7 +166,8 @@ describe("compaction hook when the observer is behind Pi's cut", () => {
 		const result = await run("u2");
 
 		expect(result).toBeUndefined();
-		const [message, level] = ctx.ui.notify.mock.calls[0];
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+		const [message, level] = ctx.ui.notify.mock.calls[0]!;
 		expect(level).toBe("warning");
 		expect(message).toContain("memory summary exceeds budget");
 	});
@@ -176,7 +177,7 @@ describe("compaction hook when the observer is behind Pi's cut", () => {
 		expect(await tooSmall.run("u2")).toBeUndefined();
 
 		const roomy = setup({ entries: laggingBranch(), model: { contextWindow: 40_000 } });
-		expect(((await roomy.run("u2")) as any).compaction.firstKeptEntryId).toBe("a1");
+		expect(((await roomy.run("u2")) as any)?.compaction.firstKeptEntryId).toBe("a1");
 	});
 
 	it("delegates during overflow recovery instead of retaining more context", async () => {
@@ -185,7 +186,10 @@ describe("compaction hook when the observer is behind Pi's cut", () => {
 		const result = await run("u2", "overflow");
 
 		expect(result).toBeUndefined();
-		expect(ctx.ui.notify.mock.calls[0][0]).toContain("overflow recovery");
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("overflow recovery"),
+			expect.anything(),
+		);
 	});
 
 	it("cuts inside a single long turn at assistant message after observation frontier", async () => {
@@ -229,7 +233,10 @@ describe("compaction hook when the observer is behind Pi's cut", () => {
 		const result = await run("a3");
 
 		expect(result).toBeUndefined();
-		expect(ctx.ui.notify.mock.calls[0][0]).toContain("nothing observed can be compacted");
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("nothing observed can be compacted"),
+			expect.anything(),
+		);
 	});
 
 	it("delegates when nothing has been observed at all", async () => {
@@ -239,7 +246,10 @@ describe("compaction hook when the observer is behind Pi's cut", () => {
 		const result = await run("u1");
 
 		expect(result).toBeUndefined();
-		expect(ctx.ui.notify.mock.calls[0][0]).toContain("no observation coverage");
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("no observation coverage"),
+			expect.anything(),
+		);
 	});
 
 	it("ignores unobserved entries that precede previous compaction boundary", async () => {
