@@ -51,6 +51,10 @@ function assistant(entry: unknown): { id: string; message: Record<string, unknow
 		: undefined;
 }
 function text(message: Record<string, unknown>): string | undefined {
+	if (typeof message.content === "string") {
+		const trimmed = message.content.trim();
+		return trimmed === "" ? undefined : trimmed;
+	}
 	if (!Array.isArray(message.content)) return undefined;
 	const value = message.content
 		.map((part) => {
@@ -367,7 +371,10 @@ export function createStateProjector(initialState: SubagentState = "running"): S
 					} else if (message?.stopReason === "error") {
 						state = "error";
 						interrupted = diagnostic(message);
-					} else {
+					} else if (message !== undefined && message.stopReason !== "error") {
+						state = "done";
+						interrupted = undefined;
+					} else if (message === undefined && state !== "error") {
 						state = "done";
 						interrupted = undefined;
 					}

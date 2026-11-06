@@ -182,12 +182,14 @@ describe("agent tool presentation providers", () => {
 		const provider = getToolPresentationProvider(toolNamed("agents_get"))!;
 		const presentation = provider(
 			{ id: "agent-9", revision: 2, includeOutput: true },
-			textToolResult("", { ...view, revision: 2 }),
+			textToolResult("", { ...view, revision: 2, sessionPath: "/path/to/session.jsonl" }),
 			plainTheme,
 			plainContext,
 		);
 		expect(presentation.summary).toBe("agent-9 · rev 2");
 		expect(presentation.request).toBe("with output");
+		expect(presentation.output).toContain("sessionPath: /path/to/session.jsonl");
+		expect(presentation.output).toContain("Deck looks fine");
 		expect(presentation.copy).toEqual({ primary: "Deck looks fine" });
 	});
 

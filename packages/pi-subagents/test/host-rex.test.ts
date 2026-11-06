@@ -1,12 +1,12 @@
 import { expect, test, vi } from "vitest";
 import {
 	createRexHostAdapter,
+	envPrefixedArgv,
 	type HostCommandResult,
 	type HostCommandRunner,
 	listRexAttachments,
 	rebindRexBlock,
 	rexBlockFocused,
-	rexLaunchArgv,
 	rexWindowCreateArgs,
 	selectHostAdapter,
 } from "../src/host-adapter.js";
@@ -308,13 +308,13 @@ test("Rex reports an unreadable listing as unknown instead of an empty one", asy
 });
 
 test("Rex launch argv adds the environment only when there is one", () => {
-	expect(rexLaunchArgv({ ...spec, env: {} })).toEqual([
+	expect(envPrefixedArgv({ ...spec, env: {} })).toEqual([
 		"/usr/bin/node",
 		"/tmp/pi cli.js",
 		"--thinking",
 		"high",
 	]);
-	expect(rexLaunchArgv(spec)).toEqual([
+	expect(envPrefixedArgv(spec)).toEqual([
 		"env",
 		"PI_SUBAGENTS_ENDPOINT=/tmp/socket path",
 		"PI_SUBAGENTS_AGENT=secret'quoted",
@@ -335,6 +335,13 @@ test("Rex window creation never focuses the parent's window", () => {
 test("default selection reaches Rex after Herdr and cmux decline", async () => {
 	const selection = await selectHostAdapter({
 		adapters: {
+			hc: {
+				kind: "hc",
+				probe: async () => ({ host: "hc", available: false, reason: "no hc terminal" }),
+				open: async () => {
+					throw new Error("not used");
+				},
+			},
 			herdr: {
 				kind: "herdr",
 				probe: async () => ({ host: "herdr", available: false, reason: "no herdr pane" }),

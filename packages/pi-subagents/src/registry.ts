@@ -350,7 +350,7 @@ function parseAttachment(value: unknown, path: string): RuntimeAttachment {
 }
 
 function isPanelHost(value: unknown): value is PanelHost {
-	return value === "herdr" || value === "cmux" || value === "rex";
+	return value === "hc" || value === "herdr" || value === "cmux" || value === "rex";
 }
 
 function parseMcpSelection(value: unknown, path: string): McpSelection {

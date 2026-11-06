@@ -1060,6 +1060,18 @@ describe("SubagentManager over the bridge", () => {
 		expect(latest.progress?.runtimeState).toBeDefined();
 	});
 
+	test("inspect returns sessionPath and progress.path for an agent with known session", async () => {
+		const current = await harness();
+		const first = await current.manager.delegate({ agent: "worker", task: "initial", wait: false });
+		if ("reason" in first) throw new Error(first.reason);
+
+		const view = await current.manager.inspect({ id: first.id });
+		if ("reason" in view) throw new Error(view.reason);
+		expect(view.sessionPath).toBeDefined();
+		expect(view.path).toBe(view.sessionPath);
+		expect(view.progress?.path).toBe(view.sessionPath);
+	});
+
 	test("inspect reads one historical revision and reports a missing one", async () => {
 		const current = await harness();
 		const first = await current.manager.delegate({ agent: "worker", task: "one", wait: false });
@@ -1805,10 +1817,13 @@ describe("SubagentManager over the bridge", () => {
 			sessionId: "sa_int-session",
 			message: "Task is unfinished and waiting for user intent.",
 		});
-		await until(test1.reportsArrived(1));
-		expect(test1.reports.map((report) => report.reason)).toEqual(["user_interrupt"]);
-		expect((await test1.registry.get("sa_int"))?.intent).toBe("active");
-		expect((await test1.registry.get("sa_int"))?.interrupted).toBeUndefined();
+		await test1.bridge.settle();
+		expect(test1.reports).toEqual([]);
+		expect((await test1.registry.get("sa_int"))?.state).toBe("blocked");
+		expect((await test1.registry.get("sa_int"))?.interrupted).toBe(
+			"Task is unfinished and waiting for user intent.",
+		);
+		expect((await test1.manager.get("sa_int"))?.state).toBe("blocked");
 	});
 
 	test("ignores lifecycle notices that name another runtime", async () => {

@@ -43,6 +43,9 @@ function delegationDetails(
 /** Readable delegation state; the result body is copied, never restated as state. */
 function delegationLines(view: DelegationView): string[] {
 	const lines = [`status: ${view.status}`, `revision: ${view.revision}`];
+	if (view.sessionPath !== undefined) {
+		lines.push(`sessionPath: ${view.sessionPath}`);
+	}
 	if (view.progress !== undefined) {
 		lines.push(`runtime: ${view.progress.runtimeState}`);
 		if (view.progress.activeTool !== undefined)
@@ -101,10 +104,17 @@ function getPresentation(
 	const view = delegationDetails(result);
 	const lines = view === undefined ? [] : delegationLines(view);
 	const resultText = view?.resultText;
+	const includeOutput = record?.includeOutput === true;
+	const output =
+		includeOutput && resultText !== undefined
+			? `${lines.join("\n")}\n\n${resultText}`
+			: lines.length === 0
+				? undefined
+				: lines.join("\n");
 	return {
 		summary: typeof revision === "number" ? `${id} · rev ${revision}` : id,
-		request: record?.includeOutput === true ? "with output" : "without output",
-		...(lines.length === 0 ? {} : { output: lines.join("\n") }),
+		request: includeOutput ? "with output" : "without output",
+		...(output === undefined ? {} : { output }),
 		...(view === undefined ? {} : { collapsedRows: [delegationRow(view)] }),
 		...(resultText === undefined ? {} : { copy: { primary: resultText } }),
 	};

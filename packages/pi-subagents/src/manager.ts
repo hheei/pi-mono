@@ -1042,7 +1042,8 @@ export class SubagentManager {
 		const snapshot = this.#withSnapshot(record);
 		const live = this.#isLive(record.subagentId) || this.#runtimeAlive(record);
 		const state = live || snapshot.state !== "running" ? snapshot.state : "blocked";
-		return publicChild({ ...snapshot, state }, live, this.#paths.get(record.subagentId));
+		const sessionPath = this.#paths.get(record.subagentId) ?? record.sessionPath;
+		return publicChild({ ...snapshot, state }, live, sessionPath);
 	}
 
 	/**
@@ -2015,7 +2016,7 @@ export class SubagentManager {
 			const child = publicChild(
 				(await this.#deps.registry.get(id)) ?? pending,
 				true,
-				this.#paths.get(id),
+				this.#paths.get(id) ?? pending.sessionPath,
 			);
 			return { child, action: "reuse", ...this.#claimedSubmission(id) };
 		});
@@ -2038,6 +2039,12 @@ export class SubagentManager {
 	}): Promise<DelegationView | OperationError> {
 		const record = await this.#deps.registry.get(input.id);
 		if (record === undefined) return failure("get", "Unknown child", input.id);
+		if (!this.#paths.has(input.id) && record.sessionPath === undefined) {
+			const discovered = await findSessionFile(record.launchConfig.sessionDir, record.sessionId);
+			if (discovered !== undefined) {
+				this.#paths.set(input.id, discovered);
+			}
+		}
 		const filePath = this.#deps.registry.path;
 		const receipt =
 			input.revision === undefined
@@ -2436,15 +2443,23 @@ export class SubagentManager {
 					value.message === undefined || value.message === ""
 						? "Task is unfinished and waiting for user intent."
 						: value.message;
-				const settled = this.#recordSettlement({
+				this.#working.delete(id);
+				const projector = this.#projectors.get(id);
+				if (projector !== undefined) {
+					projector.syncState("blocked");
+				}
+				await this.#update(id, (current) => ({
+					...current,
+					state: "blocked",
+					interrupted: message,
+				}));
+				this.#recordSettlement({
 					childId: id,
 					status: "blocked",
 					message,
 					workVersion,
 				});
-				if (settled !== undefined && !this.#claimedByWaiter(settled)) {
-					await this.contactParent(id, "user_interrupt", message, record);
-				}
+				this.#notify();
 				return;
 			}
 			if (value.kind === "left_session") {

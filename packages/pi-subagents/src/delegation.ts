@@ -7,6 +7,7 @@ export interface DelegationProgress {
 	readonly runtimeState: SubagentState;
 	readonly summary?: string;
 	readonly activeTool?: string;
+	readonly path?: string;
 }
 
 /** Why a delegation did not produce a result, with what it may already have done. */
@@ -28,6 +29,8 @@ export interface DelegationView {
 	readonly hasOutput: boolean;
 	readonly agent?: string;
 	readonly cwd?: string;
+	readonly sessionPath?: string;
+	readonly path?: string;
 	readonly resultText?: string;
 	readonly progress?: DelegationProgress;
 	readonly error?: DelegationError;
@@ -71,8 +74,10 @@ export function delegationView(
 			: {
 					agent: child.agent,
 					cwd: child.cwd,
+					...(child.path === undefined ? {} : { sessionPath: child.path, path: child.path }),
 					progress: {
 						runtimeState: child.state,
+						...(child.path === undefined ? {} : { path: child.path }),
 						...(child.summary === undefined ? {} : { summary: child.summary }),
 						...(child.activeTool === undefined ? {} : { activeTool: child.activeTool }),
 					},

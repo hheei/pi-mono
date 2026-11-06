@@ -16,9 +16,9 @@ const report = {
 };
 
 test.each([
-	["success", "done", "󰄴"],
-	["error", "error", "󰅚"],
-	["blocked", "blocked", "󰀪"],
+	["success", "done", "✓"],
+	["error", "error", "✗"],
+	["blocked", "blocked", "!"],
 ])("records a confirmed %s report as a compact info entry", (reason, status, glyph) => {
 	const appendEntry = vi.fn<ExtensionAPI["appendEntry"]>();
 	appendSubagentInfo({ appendEntry }, { ...report, reason });
@@ -104,7 +104,7 @@ test("uses the optional message view and keeps an empty report collapsed", async
 	).toBe("view");
 	expect(specs[0]?.header).toEqual({
 		kind: "agents",
-		summary: "󰄴 #21 worker · done",
+		summary: "✓ #21 worker · done",
 		tone: "success",
 	});
 	expect(specs[0]?.body).toBe("Complete report");

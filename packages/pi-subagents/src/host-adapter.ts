@@ -3,7 +3,7 @@ import { errorMessage, runCommand, shellQuote } from "@hheei/pi-ext-core";
 import type { LaunchSpec } from "./launch-spec.js";
 import type { HostList } from "./lease.js";
 
-export type HostKind = "herdr" | "cmux" | "rex";
+export type HostKind = "hc" | "herdr" | "cmux" | "rex";
 
 export interface HostCommandResult {
 	readonly stdout: string;
@@ -81,7 +81,7 @@ export interface SelectHostAdapterOptions {
 	readonly preferredHost?: HostKind;
 }
 
-const DEFAULT_HOST_ORDER: readonly HostKind[] = ["herdr", "cmux", "rex"];
+const DEFAULT_HOST_ORDER: readonly HostKind[] = ["hc", "herdr", "cmux", "rex"];
 
 /** Selects a presentation host visibly; an explicit unavailable host never falls back. */
 export async function selectHostAdapter(options: SelectHostAdapterOptions): Promise<HostSelection> {
@@ -169,6 +169,70 @@ export interface HostAdapterOptions {
 	readonly ownsAttachment: (identity: HostAttachmentIdentity) => boolean;
 	readonly timeoutMs?: number;
 	readonly env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * The herdr-core host: the child's panel is a background terminal on the same core. A core terminal
+ * has no window and no focus, so this host reports state only — a person watches the child with
+ * `hc attach`. Children end with the parent by default, which is what a panel should do.
+ */
+export function createHcHostAdapter(options: HostAdapterOptions): HostAdapter {
+	const runner = options.runner ?? systemHostCommandRunner;
+	const timeoutMs = options.timeoutMs ?? 10_000;
+	const env = options.env ?? process.env;
+	return {
+		kind: "hc",
+		async probe(): Promise<HostCapability> {
+			// `HC_TERMINAL_ID` is inherited like every other variable, so it is a hint and not proof:
+			// the named terminal still has to report this process as its foreground job.
+			const owned = await resolveHcOwnedTerminal(runner, timeoutMs, { env });
+			return owned.address === undefined
+				? {
+						host: "hc",
+						available: false,
+						reason: owned.reason ?? "no hc terminal runs this process",
+					}
+				: {
+						host: "hc",
+						available: true,
+						reason: `terminal ${owned.address} runs this process`,
+					};
+		},
+		async open(spec): Promise<HostAttachment> {
+			const owned = await resolveHcOwnedTerminal(runner, timeoutMs, { env });
+			if (owned.address === undefined) {
+				throw new Error(`hc panel: ${owned.reason ?? "no hc terminal runs this process"}`);
+			}
+			const created = await runner.run("hc", hcRunArgs(spec), { timeoutMs });
+			const failure = hostCommandFailure(created);
+			if (failure !== undefined) {
+				throw new Error(
+					`hc run failed: ${failure.code}${failure.message === "" ? "" : ` (${failure.message})`}`,
+				);
+			}
+			const address = hcTerminalAddress(created.stdout);
+			if (address === undefined) {
+				throw new Error(
+					`hc run returned no terminal (${created.timedOut ? "timed out" : created.stderr.trim() || "no error reported"})`,
+				);
+			}
+			return hostAttachment({
+				identity: { host: "hc", attachmentId: address, createdBy: options.ownerId },
+				launch: created,
+				noun: "terminal",
+				reportsFocus: false,
+				observe: () => observeHcTerminal(runner, timeoutMs, address),
+				close: async () => {
+					const killed = await runner.run("hc", ["kill", address, "--json"], { timeoutMs });
+					// A killed terminal finishes but stays in the core's inventory; removing it keeps that
+					// inventory equal to the panels that still exist. A failed removal is not a failed panel.
+					await runner.run("hc", ["rm", address, "--json"], { timeoutMs });
+					return killed;
+				},
+				ownsAttachment: options.ownsAttachment,
+			});
+		},
+	};
 }
 
 export function createHerdrHostAdapter(options: HostAdapterOptions): HostAdapter {
@@ -402,7 +466,7 @@ export function createCmuxHostAdapter(options: HostAdapterOptions): HostAdapter 
 interface HostAttachmentOptions {
 	readonly identity: HostAttachmentIdentity;
 	readonly launch: HostCommandResult;
-	readonly noun: "pane" | "surface" | "tab" | "window";
+	readonly noun: "pane" | "terminal" | "surface" | "tab" | "window";
 	readonly reportsFocus: boolean;
 	/** Reads the child's process state; `alive: undefined` means the host could not answer. */
 	readonly observe: () => Promise<{
@@ -721,6 +785,141 @@ export function rebindCmuxSurface(options: {
 	});
 }
 
+/** The environment herdr-core sets in every program it starts in a terminal. */
+export const HC_TERMINAL_ENV = "HC_TERMINAL_ID";
+
+interface HcOwnership {
+	readonly address?: string;
+	readonly reason?: string;
+}
+
+/**
+ * Finds the core terminal that is running this process. `HC_TERMINAL_ID` only names the candidate:
+ * the terminal has to report this process as its foreground job, because the variable is inherited
+ * and outlives the terminal that set it.
+ */
+export async function resolveHcOwnedTerminal(
+	runner: HostCommandRunner,
+	timeoutMs: number,
+	options: { readonly env?: NodeJS.ProcessEnv },
+): Promise<HcOwnership> {
+	const address = options.env?.[HC_TERMINAL_ENV]?.trim();
+	if (address === undefined || address === "") {
+		return { reason: "HC_TERMINAL_ID is not set: this process does not run in an hc terminal" };
+	}
+	const ancestry = await processAncestry(runner, timeoutMs);
+	if (ancestry === undefined) return { reason: "could not read this process tree" };
+	const got = await runner.run("hc", ["get", address, "--json"], { timeoutMs });
+	if (hostCommandFailure(got) !== undefined) {
+		return { reason: describeHostFailure(got, `hc get ${address}`) };
+	}
+	const foreground = hcForegroundPid(got.stdout);
+	if (foreground === undefined || !ancestry.has(foreground)) {
+		return { reason: `terminal ${address} does not run this process` };
+	}
+	return { address };
+}
+
+/**
+ * The arguments that open the child's terminal. A core terminal has no environment option, so the
+ * bridge variables ride in as `env`'s own arguments: the terminal starts a program directly, and
+ * those arguments reach that program unchanged. `--no-notify` keeps exit notes out of the parent's
+ * input, where they would land in the middle of a turn.
+ */
+export function hcRunArgs(spec: LaunchSpec): string[] {
+	return [
+		"run",
+		"--bg",
+		"--json",
+		"--no-notify",
+		"--cwd",
+		spec.cwd,
+		"--label",
+		`pi-subagents=${spec.config.subagentId}`,
+		...envPrefixedArgv(spec),
+	];
+}
+
+/** Watches one child terminal: whether its program still runs, and whether the terminal still exists. */
+async function observeHcTerminal(
+	runner: HostCommandRunner,
+	timeoutMs: number,
+	address: string,
+): Promise<{
+	readonly process: HostCommandResult;
+	readonly alive?: boolean;
+	readonly containerGone?: boolean;
+}> {
+	const got = await runner.run("hc", ["get", address, "--json"], { timeoutMs });
+	const alive = hcTerminalAlive(got);
+	return {
+		process: got,
+		...(alive === undefined ? {} : { alive }),
+		...(hcTerminalGone(got) ? { containerGone: true } : {}),
+	};
+}
+
+/**
+ * Reads a terminal's state. A terminal the core no longer has is a definite "not alive" — that is
+ * how a removed panel looks — while a query that failed for any other reason is unknown, because the
+ * caller drops the panel on "not alive".
+ */
+export function hcTerminalAlive(result: HostCommandResult): boolean | undefined {
+	if (hcTerminalGone(result)) return false;
+	if (hostCommandFailure(result) !== undefined) return undefined;
+	const state = hcTerminalField(result.stdout, "state");
+	if (state === "live") return true;
+	if (state === "finished") return false;
+	return undefined;
+}
+
+/** True when the core answered that no such terminal exists. */
+function hcTerminalGone(result: HostCommandResult): boolean {
+	const failure = hostCommandFailure(result);
+	return (
+		failure !== undefined && (failure.code === "not_found" || /no terminal/i.test(failure.message))
+	);
+}
+
+/**
+ * The terminals that exist, so recovery can tell a panel that is still there from one the core no
+ * longer has. The generation is the core instance: a different core has none of the old terminals.
+ */
+export async function listHcAttachments(
+	runner: HostCommandRunner,
+	timeoutMs: number,
+): Promise<HostList> {
+	const status = await runner.run("hc", ["server", "status", "--json"], { timeoutMs });
+	if (hostCommandFailure(status) !== undefined) return { known: false };
+	const core = hcJsonObject(status.stdout, "core")?.id;
+	if (typeof core !== "string" || core === "") return { known: false };
+	const listed = await runner.run("hc", ["ls", "--all", "--json"], { timeoutMs });
+	if (hostCommandFailure(listed) !== undefined) return { known: false };
+	const present = hcTerminalAddresses(listed.stdout);
+	if (present === undefined) return { known: false };
+	return { known: true, generation: `hc:${core}`, present };
+}
+
+export function rebindHcTerminal(options: {
+	readonly runner?: HostCommandRunner;
+	readonly address: string;
+	readonly ownerId: string;
+	readonly timeoutMs?: number;
+	readonly ownsAttachment: (identity: HostAttachmentIdentity) => boolean;
+}): HostAttachment {
+	const runner = options.runner ?? systemHostCommandRunner;
+	const timeoutMs = options.timeoutMs ?? 10_000;
+	return hostAttachment({
+		identity: { host: "hc", attachmentId: options.address, createdBy: options.ownerId },
+		launch: { stdout: "", stderr: "", exitCode: 0, timedOut: false },
+		noun: "terminal",
+		reportsFocus: false,
+		observe: () => observeHcTerminal(runner, timeoutMs, options.address),
+		close: () => runner.run("hc", ["kill", options.address, "--json"], { timeoutMs }),
+		ownsAttachment: options.ownsAttachment,
+	});
+}
+
 /** The environment Rex sets in every program it starts in a block. */
 export const REX_BLOCK_ENV = "REX_BLOCK";
 export const REX_SESSION_ENV = "REX_SESSION";
@@ -789,14 +988,15 @@ export function rexWindowCreateArgs(spec: LaunchSpec, session: string): string[]
 			block: {
 				flavor: "com.superlogical.terminal.shell",
 				label: spec.config.subagentId,
-				options: { cwd: spec.cwd, command: rexLaunchArgv(spec) },
+				options: { cwd: spec.cwd, command: envPrefixedArgv(spec) },
 			},
 		},
 	};
 	return ["api", "call", "-s", session, "session.new_window", JSON.stringify(request)];
 }
 
-export function rexLaunchArgv(spec: LaunchSpec): string[] {
+/** Adds the child environment as `env`'s own arguments, so no shell has to parse a value. */
+export function envPrefixedArgv(spec: LaunchSpec): string[] {
 	const environment = Object.entries(spec.env).map(([key, value]) => `${key}=${value}`);
 	const program = [spec.command, ...spec.argv];
 	return environment.length === 0 ? program : ["env", ...environment, ...program];
@@ -1055,6 +1255,53 @@ function rexTargetGone(result: HostCommandResult): boolean {
 	return !result.timedOut && result.exitCode !== 0 && /not found/i.test(result.stderr);
 }
 
+function hcJsonObject(output: string, child?: string): Record<string, unknown> | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output) as unknown;
+	} catch {
+		return undefined;
+	}
+	const base =
+		child === undefined
+			? parsed
+			: typeof parsed === "object" && parsed !== null
+				? (parsed as Record<string, unknown>)[child]
+				: undefined;
+	return typeof base === "object" && base !== null && !Array.isArray(base)
+		? (base as Record<string, unknown>)
+		: undefined;
+}
+
+/** One field of the terminal a command answered with. */
+function hcTerminalField(output: string, name: string): unknown {
+	return hcJsonObject(output)?.[name];
+}
+
+/** The address `hc run` and `hc get` answer with: `t7`, this terminal's handle on this core. */
+function hcTerminalAddress(output: string): string | undefined {
+	const address = hcTerminalField(output, "address");
+	return typeof address === "string" && address !== "" ? address : undefined;
+}
+
+/** The foreground process group's leader: what a terminal is running right now. */
+function hcForegroundPid(output: string): number | undefined {
+	const pid = hcJsonObject(output, "foreground")?.pid;
+	return typeof pid === "number" && Number.isSafeInteger(pid) ? pid : undefined;
+}
+
+function hcTerminalAddresses(output: string): ReadonlySet<string> | undefined {
+	const terminals = hcJsonObject(output)?.terminals;
+	if (!Array.isArray(terminals)) return undefined;
+	const addresses = new Set<string>();
+	for (const entry of terminals) {
+		if (typeof entry !== "object" || entry === null) continue;
+		const address = (entry as Record<string, unknown>).address;
+		if (typeof address === "string" && address !== "") addresses.add(address);
+	}
+	return addresses;
+}
+
 function herdrCollection(output: string, collection: string): readonly unknown[] | undefined {
 	let parsed: unknown;
 	try {
@@ -1188,7 +1435,12 @@ function hostCommandFailureFrom(output: string): HostCommandFailure | undefined 
 	}
 	const error = findNamedObject(parsed, "error");
 	if (error === undefined) return undefined;
-	const code = typeof error.code === "string" ? error.code : "error";
+	const code =
+		typeof error.code === "string"
+			? error.code
+			: typeof error.kind === "string"
+				? error.kind
+				: "error";
 	const message = typeof error.message === "string" ? error.message : "";
 	return { code, message };
 }

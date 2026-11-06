@@ -18,14 +18,17 @@ import type { ChildIdentity, PanelHost, RuntimeAttachment, SubagentRecord } from
 import { BRIDGE_ENVIRONMENT_KEYS, isOperationError, isThinkingLevel } from "./domain.js";
 import {
 	createCmuxHostAdapter,
+	createHcHostAdapter,
 	createHerdrHostAdapter,
 	createRexHostAdapter,
 	type HostAttachment,
 	type HostAttachmentIdentity,
 	listCmuxAttachments,
+	listHcAttachments,
 	listHerdrAttachments,
 	listRexAttachments,
 	rebindCmuxSurface,
+	rebindHcTerminal,
 	rebindHerdrTab,
 	rebindRexBlock,
 	selectHostAdapter,
@@ -102,6 +105,8 @@ function listHostAttachments(
 			return listHerdrAttachments(systemHostCommandRunner, 10_000, { env });
 		case "cmux":
 			return listCmuxAttachments(systemHostCommandRunner, 10_000);
+		case "hc":
+			return listHcAttachments(systemHostCommandRunner, 10_000);
 		case "rex":
 			return listRexAttachments(systemHostCommandRunner, 10_000, { env });
 	}
@@ -115,6 +120,12 @@ function rebindHostAttachment(options: {
 	readonly ownsAttachment: (identity: HostAttachmentIdentity) => boolean;
 }): HostAttachment {
 	switch (options.host) {
+		case "hc":
+			return rebindHcTerminal({
+				address: options.attachmentId,
+				ownerId: options.ownerId,
+				ownsAttachment: options.ownsAttachment,
+			});
 		case "herdr":
 			return rebindHerdrTab({
 				tabId: options.attachmentId,
@@ -249,8 +260,8 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 			const parentSessionId = context.sessionManager.getSessionId();
 			const registry = createSubagentRegistry({ parentSessionId });
 			sweepUncertainDispatch(registry.path, parentSessionId);
-			// Presentation is chosen once per parent session: herdr first, then cmux, and a parent with
-			// neither runs every child in the background. Successful selection stays silent; only actual
+			// Presentation is chosen once per parent session: herdr-core first, then herdr, then cmux,
+			// and a parent with none of them runs every child in the background. Successful selection stays silent; only actual
 			// failures and fallback diagnostics are reported by the launch path.
 			const ownerId = parentSessionId;
 			const ownsAttachment = (identity: HostAttachmentIdentity): boolean =>
@@ -264,6 +275,7 @@ export default function piSubagentsExtension(pi: ExtensionAPI): void {
 					}
 				: await selectHostAdapter({
 						adapters: {
+							hc: createHcHostAdapter({ ownerId, ownsAttachment }),
 							herdr: createHerdrHostAdapter({ ownerId, ownsAttachment }),
 							cmux: createCmuxHostAdapter({ ownerId, ownsAttachment }),
 							rex: createRexHostAdapter({ ownerId, ownsAttachment }),

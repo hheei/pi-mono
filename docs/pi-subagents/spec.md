@@ -331,7 +331,7 @@ Handoff/recovery 的细节属于内部 transition，不扩展 public enum。inte
 - panel child 的倒计时受聚焦影响：到期时先 `observe()`，panel 仍然聚焦（或聚焦不可判定）就重新计时，只有明确「没人在看」才关闭 panel。观察不清楚时不关闭——panel 只在有判断依据时被关掉。
 - 在检查期间到达的任何 child 信号都会让这一次回收作废并重新计时：这些事件排在回收任务之后处理，只有「入站信号计数」能拦住一个已经在飞行中的判断，否则一个刚开始使用 panel 的人会失去它。
 - 人手动输入（`child_input` 且 `source=interactive`）取消倒计时；parent 自己经 bridge 发的消息（`source=rpc`）不算人的存在。turn 结束后若没有待处理输入会重新计时。
-- 宿主无法报告聚焦时（今天的 cmux）不倒计时：这类 child 只由 `agents_stop` 关闭，`HostAttachment.reportsFocus` 让 manager 不必猜。
+- 宿主无法报告聚焦时（今天的 cmux、herdr-core 的 terminal）不倒计时：这类 child 只由 `agents_stop` 关闭，`HostAttachment.reportsFocus` 让 manager 不必猜。
 - 本进程不持有 runtime 的 child（例如 parent 重启后 adopt 的 panel child）不倒计时：既无法确认退出，也无法判断聚焦，因此不做回收。
 
 ### 6.4 Session switch
@@ -430,10 +430,11 @@ seam 只有一个：`HostDirectory`。生产 adapter 包现有的 Herdr/cmux 列
 
 ## 7. Host 与 UI 合同
 
-HostAdapter 只负责 capability probe、开 panel（Herdr 新 tab / cmux 新 surface / Rex 新 window）、观察 panel（含聚焦状态）与 cleanup，返回可观察 attachment。
+HostAdapter 只负责 capability probe、开 panel（herdr-core 新 terminal / Herdr 新 tab / cmux 新 surface / Rex 新 window）、观察 panel（含聚焦状态）与 cleanup，返回可观察 attachment。
 
 - herdr：`tab create`（`--cwd`、`--no-focus`、`--label <subagentId>`、`--env`）后用 `pane run <root pane> <LaunchSpec argv>` 运行 child，cleanup 关闭该 tab；聚焦 = 该 tab 的 `focused` 且其 workspace 的 `focused`。
 - panel child 的 LaunchSpec 带 `--approve`，因为 parent 已明确选择并提供了项目级 agent、extension 与 skill 配置；native Pi TUI 启动不得停在项目文件信任提示上。
+- hc（herdr-core，`hc` 0.1.x）：`hc run --bg --json --no-notify --cwd <spec.cwd> --label pi-subagents=<subagentId> env K=V … <LaunchSpec argv>` 打开 child 自己的 terminal。core 的 terminal 没有 env 选项，所以 bridge 变量以 `env` 的程序参数送达，不经 shell 解析；`--no-notify` 阻止退出提示被敲进父会话的输入。cleanup 是 `kill <address>` 后再尽力 `rm <address>`（kill 后的 terminal 仍留在 core 清单里）。归属 = `hc get <HC_TERMINAL_ID> --json` 的 `foreground.pid` 是本进程或祖先；`HC_TERMINAL_ID` 只是提示（它同样会被继承）。terminal 没有聚焦概念，因此 `reportsFocus: false`。core 已没有该 terminal（`not_found`）回答「已不存在」，其它查询失败回答未知。
 - cmux：`new-surface --command`；聚焦状态无文档化查询，因此 fail open（不自动回收），代码内以 `TODO(cmux-focus)` 标注。
 - rex：`session.new_window`（`focus: false`，window/block 都带 `<subagentId>` 标签，block flavor 为
   `com.superlogical.terminal.shell`）直接以 argv 运行 child；Rex 的 terminal flavor 没有 env 选项，
@@ -450,7 +451,7 @@ HostAdapter 只负责 capability probe、开 panel（Herdr 新 tab / cmux 新 su
 
 - attachment 暴露 `reportsFocus`：宿主能报告聚焦时 manager 才为它安排 idle 回收，能力缺失时明确退化为「只由 stop 关」。
 
-默认顺序为 herdr、cmux 后 rex，用户明确指定时按指定选择；选择和 fallback 原因必须可见，不能静默改变执行 provider：选择结果写在启动诊断里，而每次 spawn 的结果都带上 `presentation` 与 fallback 说明。
+默认顺序为 hc、herdr、cmux 后 rex，用户明确指定时按指定选择；选择和 fallback 原因必须可见，不能静默改变执行 provider：选择结果写在启动诊断里，而每次 spawn 的结果都带上 `presentation` 与 fallback 说明。
 
 parent 只在 spawn 时选 host：它持有 panel 的 attachment（身份、观察、清理），但绝不解析终端输出、不镜像 transcript、不替 child 构造第二份 argv。
 
