@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-ext-memory",
-	"version": "0.7.0",
+	"version": "0.7.1",
 	"description": "Observational memory extension for Pi — cache-friendly tiered compaction with observations and reflections.",
 	"type": "module",
 	"main": "dist/index.js",
