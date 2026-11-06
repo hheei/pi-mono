@@ -240,6 +240,8 @@ describe("hindsight session prompt injection", () => {
 		expect(event.sections[PREAMBLE_SECTION]).toContain(MEMORY_PREAMBLE_HEADING);
 		expect(event.sections[RECALL_SECTION]).toBeUndefined();
 		expect(searchPages).not.toHaveBeenCalled();
+		expect(gateway.listPages).not.toHaveBeenCalled();
+		expect(event.sections[PREAMBLE_SECTION]).toContain("mcp__hindsight__get_knowledge_base_tree");
 	});
 
 	it("fails open when retrieval or the page index is unavailable", async () => {

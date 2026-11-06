@@ -61,7 +61,11 @@ export default function observationalMemory(pi: ExtensionAPI): void {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (hindsight === undefined || isSubagentProcess()) return;
-		ctx?.ui?.setWorkingMessage?.("Recalling");
+		const shouldRecall =
+			hindsight.resolved.config.autoRecall &&
+			event.messageType === "user" &&
+			event.prompt.trim().length > 0;
+		if (shouldRecall) ctx?.ui?.setWorkingMessage?.("Recalling");
 		try {
 			const injected = await hindsight.beforeAgentStart(event);
 			if (injected === undefined) return;
@@ -70,7 +74,7 @@ export default function observationalMemory(pi: ExtensionAPI): void {
 				truncated: injected.truncated,
 			});
 		} finally {
-			ctx?.ui?.setWorkingMessage?.(undefined);
+			if (shouldRecall) ctx?.ui?.setWorkingMessage?.(undefined);
 		}
 	});
 	pi.on("agent_end", async (event, context) => {

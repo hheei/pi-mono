@@ -240,6 +240,16 @@ export class HindsightSession {
 	}
 
 	async #renderPreamble(): Promise<string> {
+		if (!this.resolved.config.autoRecall) {
+			return renderHindsightPreamble({
+				repo: this.resolved.repo,
+				bankId: this.resolved.bankId,
+				isolationMode: this.resolved.isolationMode,
+				pagesAvailable: true,
+				pages: [],
+				autoRecall: false,
+			});
+		}
 		let pages: HindsightPageSummary[] = [];
 		let pagesAvailable = true;
 		try {
@@ -260,6 +270,7 @@ export class HindsightSession {
 			isolationMode: this.resolved.isolationMode,
 			pagesAvailable,
 			pages,
+			autoRecall: true,
 		});
 	}
 
@@ -362,6 +373,7 @@ export async function startHindsightSession(
 			isolationMode: resolved.isolationMode,
 			pagesAvailable: true,
 			pages: [],
+			autoRecall: resolved.config.autoRecall,
 		});
 		const preamble = body?.startsWith(guide.slice(0, guide.indexOf("\n\nKnowledge pages:")))
 			? body

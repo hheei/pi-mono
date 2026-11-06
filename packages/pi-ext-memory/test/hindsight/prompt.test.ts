@@ -76,6 +76,18 @@ describe("hindsight prompt injection", () => {
 		expect(text).toContain("kp-1 — Conventions: repo-wide rules");
 	});
 
+	it("renders condensed page guidance when auto-recall is disabled", () => {
+		const text = renderHindsightPreamble({
+			repo: "pi-mono",
+			bankId: "hheei",
+			isolationMode: "tagged-shared-bank",
+			pagesAvailable: true,
+			pages: [],
+			autoRecall: false,
+		});
+		expect(text).toContain("Browse available pages with `mcp__hindsight__get_knowledge_base_tree`");
+	});
+
 	it("names the dedicated bank and reports an empty or unsupported page index", () => {
 		const dedicated = renderHindsightPreamble({
 			repo: "pi-mono",

@@ -21,6 +21,7 @@ export interface HindsightPreambleInput {
 	readonly isolationMode: HindsightIsolationMode;
 	readonly pagesAvailable: boolean;
 	readonly pages: readonly HindsightPageSummary[];
+	readonly autoRecall?: boolean | undefined;
 }
 
 export const TRUNCATION_NOTICE = "\n[... memory truncated to stay within token budget ...]";
@@ -70,6 +71,9 @@ export function renderMemoryContainer(
 }
 
 function renderPages(input: HindsightPreambleInput): string {
+	if (input.autoRecall === false) {
+		return "Browse available pages with `mcp__hindsight__get_knowledge_base_tree` or search with `mcp__hindsight__search_knowledge_base`.";
+	}
 	if (!input.pagesAvailable) {
 		return "Knowledge pages are not available on this Hindsight server; use `mcp__hindsight__reflect` for memory reasoning.";
 	}
