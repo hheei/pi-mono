@@ -1,4 +1,5 @@
-import { type FileHandle, mkdir, open, readdir } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { type FileHandle, mkdir, open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
@@ -28,7 +29,7 @@ const OUTPUT_DIR = join(tmpdir(), "pi-output");
 /** Output can carry private data, so only the user may read the files. */
 const OUTPUT_FILE_MODE = 0o600;
 
-/** How many sequence numbers one spill may try before another process's file wins. */
+/** How many ids one spill may try before another process's file wins. */
 const SPILL_ATTEMPTS = 5;
 
 export interface ToolOutputLimits {
@@ -86,39 +87,19 @@ export function fitsOutputBudget(
  */
 export const SPILL_NOTE_PREFIX = "[Full output:";
 
-/** Highest sequence number already used in the output directory, so a restart never overwrites. */
-async function nextSequence(): Promise<number> {
-	let entries: string[];
-	try {
-		entries = await readdir(OUTPUT_DIR);
-	} catch {
-		return 1;
-	}
-	let highest = 0;
-	for (const entry of entries) {
-		const match = /-(\d+)\.[a-z]+$/.exec(entry);
-		if (match === null) continue;
-		const value = Number(match[1]);
-		if (Number.isSafeInteger(value) && value > highest) highest = value;
-	}
-	return highest + 1;
-}
-
 async function spill(text: string, prefix: string): Promise<string | undefined> {
 	try {
 		await mkdir(OUTPUT_DIR, { recursive: true, mode: 0o700 });
-		let sequence = await nextSequence();
-		// Another Pi process spills into the same directory, so a sequence it took first is retried
-		// instead of losing this text: `wx` never follows a link someone else placed at the path, and
-		// it also refuses to replace a file a concurrent writer just took.
+		// Another Pi process spills into the same directory, so an id it took first is retried instead
+		// of losing this text: `wx` never follows a link someone else placed at the path, and it also
+		// refuses to replace a file a concurrent writer just took.
 		for (let attempt = 0; attempt < SPILL_ATTEMPTS; attempt += 1) {
-			const path = join(OUTPUT_DIR, `${prefix}-${String(sequence)}.txt`);
+			const path = join(OUTPUT_DIR, `${prefix}-${randomBytes(3).toString("hex")}.txt`);
 			let handle: FileHandle;
 			try {
 				handle = await open(path, "wx", OUTPUT_FILE_MODE);
 			} catch (error) {
 				if (!isRecord(error) || error.code !== "EEXIST") throw error;
-				sequence += 1;
 				continue;
 			}
 			try {

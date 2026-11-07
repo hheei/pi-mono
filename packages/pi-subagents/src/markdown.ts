@@ -1,13 +1,13 @@
 /**
- * Transforms plain agent and background task identifiers (e.g. `agent-3f9a1c`, `bash-1`)
+ * Transforms plain agent and background task identifiers (e.g. `agent-3f9a1c`, `bash-3f9a1c`)
  * in Markdown prose by wrapping them in inline code backticks, making them visually
  * distinct in terminal TUI rendering.
  *
  * Preserves text inside code blocks, inline code, and URLs intact.
  */
-const IDENTIFIER = /(?:agent-[0-9a-f]{6}|bash-\d+)/;
+const IDENTIFIER = /(?:agent-[0-9a-f]{6}|bash-[0-9a-f]{6})/;
 /** Word boundary: the id is not part of a longer word or a markdown link URL. */
-const PROSE_IDENTIFIER = /(?<![`/\w])((?:agent-[0-9a-f]{6}|bash-\d+))(?![`\w])/gu;
+const PROSE_IDENTIFIER = /(?<![`/\w])((?:agent-[0-9a-f]{6}|bash-[0-9a-f]{6}))(?![`\w])/gu;
 
 export function transformSubagentsMarkdown(markdown: string): string {
 	if (!IDENTIFIER.test(markdown)) return markdown;

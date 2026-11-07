@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 // Types
 export interface ActivityEntry {
 	id: string;
@@ -33,10 +35,9 @@ export class ActivityMonitor {
 		oldestTimestamp: null,
 		windowMs: 60000,
 	};
-	private nextId = 1;
 
 	logStart(partial: Omit<ActivityEntry, "id" | "startTime" | "status">): string {
-		const id = `act-${this.nextId++}`;
+		const id = `act-${randomBytes(3).toString("hex")}`;
 		const entry: ActivityEntry = {
 			...partial,
 			id,

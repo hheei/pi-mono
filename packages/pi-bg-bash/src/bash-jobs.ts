@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
 	closeSync,
 	createWriteStream,
@@ -96,11 +97,6 @@ function processGroupAlive(pid: number): boolean {
 		// Permission errors do not prove the group disappeared; bounded cleanup must report uncertainty.
 		return !(error instanceof Error && "code" in error && error.code === "ESRCH");
 	}
-}
-
-/** Random per-registry marker, so ids from a reloaded registry never reuse an earlier log file. */
-function runtimeNonce(): string {
-	return crypto.randomUUID().replace(/-/g, "").slice(0, 6);
 }
 
 export interface BashJobRequest {
@@ -319,8 +315,6 @@ export class BashJobRegistry {
 	readonly #terminalListeners = new Set<() => void>();
 	readonly #reminderListeners = new Set<(event: BashJobReminder) => void>();
 	#closed = false;
-	#sequence = 0;
-	readonly #nonce = runtimeNonce();
 	#disposal: Promise<void> | undefined;
 	readonly #tailBytes: number | undefined;
 	readonly #persistence: BashPersistence | undefined;
@@ -670,8 +664,14 @@ export class BashJobRegistry {
 	}
 
 	#nextId(): string {
-		this.#sequence += 1;
-		return `bash-${this.#nonce}-${this.#sequence}`;
+		// Same shape as a child id: short enough for a status line, and the log file name is the id.
+		// Nothing arbitrates allocation across processes, so this checks the local registry and lets
+		// the per-session task directory keep restored jobs in view.
+		for (let attempt = 0; attempt < 100; attempt++) {
+			const id = `bash-${randomBytes(3).toString("hex")}`;
+			if (!this.#jobs.has(id)) return id;
+		}
+		throw new Error("Could not allocate a unique bash job id");
 	}
 
 	/** Background jobs still active or lacking a recorded report on the current branch. */

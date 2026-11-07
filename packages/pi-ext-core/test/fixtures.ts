@@ -5,7 +5,7 @@ type SessionHandler = (event: unknown, context: ExtensionContext) => void | Prom
 
 export interface FakePiHost {
 	readonly pi: ExtensionAPI;
-	emit(type: SessionEvent): Promise<void>;
+	emit(type: SessionEvent, event?: Record<string, unknown>): Promise<void>;
 }
 
 export function createFakePiHost(): FakePiHost {
@@ -25,8 +25,8 @@ export function createFakePiHost(): FakePiHost {
 
 	return {
 		pi,
-		async emit(type: SessionEvent): Promise<void> {
-			for (const handler of handlers.get(type) ?? []) await handler({ type }, context);
+		async emit(type: SessionEvent, event: Record<string, unknown> = {}): Promise<void> {
+			for (const handler of handlers.get(type) ?? []) await handler({ type, ...event }, context);
 		},
 	};
 }

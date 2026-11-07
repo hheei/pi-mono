@@ -209,15 +209,9 @@ test.concurrent("assigns ids that stay unique across a registry reload", async (
 		// Foreground jobs end with their call, so teardown has nothing left to stop and wait for.
 		await Promise.all([first.waitFor(a.id), first.waitFor(b.id), second.waitFor(c.id)]);
 		expect(new Set([a.id, b.id, c.id]).size).toBe(3);
-		// A rebuilt registry restarts its sequence behind a fresh random nonce, so it can never
-		// reuse the log file of an earlier run in the same session directory.
-		expect([a.id.endsWith("-1"), b.id.endsWith("-2"), c.id.endsWith("-1")]).toEqual([
-			true,
-			true,
-			true,
-		]);
-		expect(a.id.split("-")[1]).toBe(b.id.split("-")[1]);
-		expect(c.id.split("-")[1]).not.toBe(a.id.split("-")[1]);
+		// Every job draws its own id, in the same shape as a subagent child id, so a rebuilt
+		// registry cannot reuse the log file of an earlier run in the same session directory.
+		for (const id of [a.id, b.id, c.id]) expect(id).toMatch(/^bash-[0-9a-f]{6}$/u);
 	} finally {
 		await first.dispose();
 		await second.dispose();

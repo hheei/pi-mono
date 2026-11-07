@@ -92,8 +92,8 @@ describe("tool output budget", () => {
 		const second = await truncateWithSpill(text, "tt", limitsForCalls(1));
 		const firstPath = first.fullOutputPath ?? "";
 		const secondPath = second.fullOutputPath ?? "";
-		expect(firstPath).toMatch(/\/pi-output\/tt-\d+\.txt$/);
-		expect(secondPath).toMatch(/\/pi-output\/tt-\d+\.txt$/);
+		expect(firstPath).toMatch(/\/pi-output\/tt-[0-9a-f]{6}\.txt$/);
+		expect(secondPath).toMatch(/\/pi-output\/tt-[0-9a-f]{6}\.txt$/);
 		expect(firstPath).not.toBe(secondPath);
 		await rm(firstPath, { force: true });
 		await rm(secondPath, { force: true });

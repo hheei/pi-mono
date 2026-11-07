@@ -170,7 +170,7 @@ describe("python_eval rendering through the host frame", () => {
 			expect(result.isError).toBeUndefined();
 			expect(text).toContain("Full output:");
 			const path = /Full output: (\S+)\]/.exec(text)?.[1] ?? "";
-			expect(path).toMatch(/\/pi-output\/py-\d+\.txt$/);
+			expect(path).toMatch(/\/pi-output\/py-[0-9a-f]{6}\.txt$/);
 			expect((await readFile(path, "utf8")).length).toBeGreaterThan(text.length);
 			await rm(path, { force: true });
 		} finally {
