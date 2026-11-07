@@ -134,6 +134,14 @@ TypeScript 的目标是让设计更清楚，不是把每个值都包成类型、
 - **Surface**：由 ext-core 管理的自定义 TUI 生命周期。
 - **Widget**：贴近 editor 的展示组件，由 ext-core 管理。
 
+Herdr 相关的三个 CLI 属于两套彼此无关的软件，**禁止**互换或含糊指代：
+
+- **`herdr` CLI**（现 0.9.5）= 旧版 Herdr 终端工作区工具，独立产品。仓库：<https://github.com/herdrdev/herdr>
+- **herdr-core** = 一套新版内核，提供 `hc` CLI，是 herdr-app 的服务端：它负责真正跑 terminal，自己不画任何东西。仓库：<https://github.com/herdrdev/herdr-core>
+- **herdr-app** = 新版桌面程序（GUI 客户端），其内核就是 herdr-core；两者属于同一套东西。仓库：<https://github.com/herdrdev/herdr-app>
+
+`herdr` CLI 与 herdr-core/herdr-app **没有任何关系**；`herdr-core` + `herdr-app` 才是一套。描述 pi-subagents 的 host 时，`herdr` 指旧 CLI 的 pane/tab 模型，`hc` 指 herdr-core 的 terminal 模型。
+
 **禁止**使用不带限定词的 “core” 作为 ownership 名称。
 
 架构方案应按以下顺序说明：
