@@ -5,7 +5,7 @@ import {
 	ObserverStreamError,
 	runObserver,
 } from "../src/agents/observer/agent.js";
-import { fakeAgentLoop, itClampsMaxTokens } from "./fixtures/agent-loop.js";
+import { captureLoopConfig, fakeAgentLoop, itClampsMaxTokens } from "./fixtures/agent-loop.js";
 
 function assistantEndEvent(stopReason: string, errorMessage?: string): any {
 	return { type: "message_end", message: { role: "assistant", stopReason, errorMessage } };
@@ -23,6 +23,35 @@ describe("runObserver maxTokens clamping", () => {
 	};
 
 	itClampsMaxTokens((overrides) => runObserver({ ...args, ...overrides }));
+});
+
+describe("runObserver prompt cache identity", () => {
+	const args = {
+		model: {} as any,
+		modelRegistry: { streamSimple: (() => undefined) as any },
+		apiKey: "test",
+		priorReflections: [],
+		priorObservations: [],
+		chunk: "[Source entry id: entry-a]\nUser asked for a memory update.",
+		allowedSourceEntryIds: ["entry-a"],
+		resolveTimestamp: () => "2026-05-02 10:30",
+	};
+
+	it("passes the parent session id so the provider can key caching and routing on it", async () => {
+		const { loop, config } = captureLoopConfig();
+
+		await runObserver({ ...args, sessionId: "session-1", agentLoop: loop });
+
+		expect(config().sessionId).toBe("session-1");
+	});
+
+	it("omits sessionId when the caller has no session identity", async () => {
+		const { loop, config } = captureLoopConfig();
+
+		await runObserver({ ...args, agentLoop: loop });
+
+		expect(config()).not.toHaveProperty("sessionId");
+	});
 });
 
 describe("runObserver", () => {

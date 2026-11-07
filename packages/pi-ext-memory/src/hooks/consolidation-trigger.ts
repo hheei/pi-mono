@@ -499,6 +499,7 @@ function workerArgs(
 		maxOutputTokens: runtime.config.agentMaxTokens,
 		thinkingLevel: runtime.config.model?.thinking ?? "low",
 		modelRegistry: ctx.modelRegistry,
+		sessionId: ctx.sessionManager.getSessionId?.(),
 		signal: ctx.signal,
 		onCost: recordCost,
 	};

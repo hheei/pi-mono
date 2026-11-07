@@ -33,6 +33,12 @@ export interface WorkerLoopArgs {
 	readonly maxOutputTokens?: number | undefined;
 	readonly thinkingLevel?: ModelThinkingLevel | undefined;
 	readonly modelRegistry: StreamableModelRegistry;
+	/**
+	 * Parent session identity, so the provider can key prompt caching and request routing on the
+	 * session. Workers keep no history of their own; this only makes their shared static prefix
+	 * (system prompt and tools) reachable again on the next stage.
+	 */
+	readonly sessionId?: string | undefined;
 	readonly streamSimple?: WorkerStreamSimple | undefined;
 	/** Receives the provider-reported USD cost of each assistant turn in this loop. */
 	readonly onCost?: ((costUsd: number) => void) | undefined;
@@ -71,6 +77,7 @@ export async function runWorkerAgent(
 		...(apiKey !== undefined ? { apiKey } : {}),
 		...(headers !== undefined ? { headers } : {}),
 		...(env !== undefined ? { env } : {}),
+		...(args.sessionId !== undefined ? { sessionId: args.sessionId } : {}),
 		maxTokens: boundedMaxTokens(model, args.maxOutputTokens ?? AGENT_LOOP_MAX_TOKENS),
 		convertToLlm: (msgs) => msgs as Message[],
 		toolExecution: "sequential",
