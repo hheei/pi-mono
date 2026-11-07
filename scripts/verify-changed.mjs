@@ -154,7 +154,14 @@ const hasCodeChanges = changedFiles.some((f) => /\.(ts|tsx|js|mjs|cjs)$/.test(f)
 if (!skipGraph && hasCodeChanges) {
 	try {
 		console.log("\n[verify-changed] Step 3: Updating repository code graph (graphify update .)...");
-		execFileSync("graphify", ["update", "."], { cwd: repoRoot, stdio: "inherit" });
+		// graphify snapshots every semantic graph into graphify-out/<date>/ before overwriting it,
+		// which keeps ~15MB per day in the working tree. The graph is regenerated, not edited by
+		// hand, so the dated copies buy nothing here.
+		execFileSync("graphify", ["update", "."], {
+			cwd: repoRoot,
+			stdio: "inherit",
+			env: { ...process.env, GRAPHIFY_NO_BACKUP: "1" },
+		});
 	} catch (e) {
 		console.warn(
 			"[verify-changed] Notice: graphify update . was skipped or encountered an issue:",
