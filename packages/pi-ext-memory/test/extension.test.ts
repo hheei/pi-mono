@@ -61,7 +61,7 @@ describe("observationalMemory extension entry", () => {
 		expect(registry.get("pi-ext-memory")).toBeDefined();
 		expect(registry.get("pi-ext-memory")?.id).toBe("pi-ext-memory");
 
-		await handlers.session_shutdown?.(undefined, sessionContext);
+		await handlers.session_shutdown?.({ type: "session_shutdown", reason: "quit" }, sessionContext);
 		expect(registry.get("pi-ext-memory")).toBeUndefined();
 	});
 });

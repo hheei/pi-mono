@@ -81,7 +81,10 @@ async function startSession(hooks: Hooks, cwd: string): Promise<() => Promise<vo
 	};
 	await hooks.handlers.get("session_start")?.(undefined, sessionContext);
 	return async () => {
-		await hooks.handlers.get("session_shutdown")?.(undefined, sessionContext);
+		await hooks.handlers.get("session_shutdown")?.(
+			{ type: "session_shutdown", reason: "quit" },
+			sessionContext,
+		);
 	};
 }
 
