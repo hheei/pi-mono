@@ -221,7 +221,7 @@ test("Herdr opens its own labeled tab and runs the LaunchSpec in its root pane",
 		focused: true,
 		identity: { host: "herdr", attachmentId: "wG:tH", createdBy: "owner-1" },
 	});
-	expect(attachment.reportsFocus).toBe(true);
+	expect(attachment.presence).toBe("observable");
 	expect(calls[5]).toEqual(["herdr", "pane", "process-info", "--pane", "wG:pD"]);
 	expect(calls[6]).toEqual(["herdr", "tab", "list"]);
 	expect(calls[7]).toEqual(["herdr", "workspace", "list"]);
@@ -533,7 +533,7 @@ test("cmux opens a new surface without splitting the parent layout", async () =>
 	expect(calls[0]?.[4]).toContain(quotedLaunch);
 	expect(calls[0]?.[4]).not.toContain("--mode");
 	expect(calls[0]?.join(" ")).not.toContain("new-split");
-	expect(attachment.reportsFocus).toBe(false);
+	expect(attachment.presence).toBe("unknown");
 	expect(calls.at(-1)).toEqual(["cmux", "--json", "close-surface", "--surface", "surface:7"]);
 });
 

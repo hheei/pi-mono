@@ -172,7 +172,7 @@ describe("opening a child in a host panel", () => {
 					return {
 						identity,
 						launch: { stdout: "", stderr: "", exitCode: 0, timedOut: false },
-						reportsFocus: true,
+						presence: "observable",
 						async observe() {
 							observeCall += 1;
 							if (behavior.containerGone !== undefined) {

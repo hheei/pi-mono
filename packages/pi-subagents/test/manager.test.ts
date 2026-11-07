@@ -103,7 +103,7 @@ class FakeAttachment implements HostAttachment {
 		createdBy: string;
 	};
 	readonly launch = { stdout: "", stderr: "", exitCode: 0, timedOut: false };
-	readonly reportsFocus: boolean;
+	readonly presence: HostAttachment["presence"];
 	public alive = true;
 	public focused: boolean | undefined = false;
 	/** Makes cleanup() fail and leave the panel standing, as a refusing host would. */
@@ -113,9 +113,9 @@ class FakeAttachment implements HostAttachment {
 	public cleanups = 0;
 	readonly #closeWaiters: Array<() => void> = [];
 
-	public constructor(reportsFocus: boolean, ownerId: string) {
+	public constructor(presence: HostAttachment["presence"], ownerId: string) {
 		this.identity = { host: "herdr", attachmentId: "wG:tH", createdBy: ownerId };
-		this.reportsFocus = reportsFocus;
+		this.presence = presence;
 	}
 
 	public async observe(): Promise<HostObservation> {
@@ -269,7 +269,8 @@ async function harness(
 		/** Set when this parent has a presentation host and spawns into panels by default. */
 		host?: boolean;
 		/** Set when the host cannot report focus, which is how cmux behaves today. */
-		blindHost?: boolean;
+		/** The host's answer about a watching human; `unknown` stands for a pane nobody can be read watching. */
+		presence?: HostAttachment["presence"];
 		/** Set to exercise the host-listing restore path instead of the bridge-only one. */
 		directory?: HostDirectory;
 		parentSessionId?: string;
@@ -337,7 +338,7 @@ async function harness(
 	const openPanel = vi.fn(
 		async (record: SubagentRecord): Promise<LaunchOutcome<FakeAttachment>> => {
 			await startRuntime(record);
-			const attachment = new FakeAttachment(options.blindHost !== true, parentSessionId);
+			const attachment = new FakeAttachment(options.presence ?? "observable", parentSessionId);
 			panels.set(record.subagentId, attachment);
 			return { handle: attachment };
 		},
@@ -2304,8 +2305,8 @@ describe("SubagentManager over the bridge", () => {
 		expect(await test1.manager.get(spawned.child.id)).toMatchObject({ state: "done" });
 	});
 
-	test("never reclaims a panel whose host cannot report focus", async () => {
-		const test1 = await harness({ idleTimeoutMs: 10, host: true, blindHost: true });
+	test("never reclaims a panel whose host cannot say who watches it", async () => {
+		const test1 = await harness({ idleTimeoutMs: 10, host: true, presence: "unknown" });
 		const spawned = await test1.manager.spawn({ agent: "worker", task: "Do the work." });
 		if ("reason" in spawned) throw new Error(spawned.reason);
 		const attachment = test1.panels.get(spawned.child.id);
@@ -2318,6 +2319,25 @@ describe("SubagentManager over the bridge", () => {
 
 		await advanceFakeTime(40);
 		expect(attachment.cleanups).toBe(0);
+		expect(await test1.manager.get(spawned.child.id)).toMatchObject({ state: "done" });
+	});
+
+	test("closes a settled panel on a host that draws nothing of its own", async () => {
+		const test1 = await harness({ idleTimeoutMs: 10, host: true, presence: "unwatched" });
+		const spawned = await test1.manager.spawn({ agent: "worker", task: "Do the work." });
+		if ("reason" in spawned) throw new Error(spawned.reason);
+		const attachment = test1.panels.get(spawned.child.id);
+		if (attachment === undefined) throw new Error("no panel was opened");
+		// herdr-core reports no viewer, and the core itself draws nothing: there is nothing to disturb.
+		attachment.focused = undefined;
+		test1.bridge.emit(spawned.child.id, {
+			type: "agent_settled",
+			message: { role: "assistant", stopReason: "stop" },
+		});
+		await test1.bridge.settle();
+
+		await until(attachment.closed());
+		expect(test1.bridge.requests.some((request) => request.operation === "shutdown")).toBe(true);
 		expect(await test1.manager.get(spawned.child.id)).toMatchObject({ state: "done" });
 	});
 

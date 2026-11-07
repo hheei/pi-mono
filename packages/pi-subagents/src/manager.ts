@@ -766,7 +766,9 @@ export class SubagentManager {
 		const attachment = this.#attachments.get(id);
 		const runtime = this.#processes.get(id);
 		if (attachment === undefined && runtime === undefined) return;
-		if (attachment !== undefined && !attachment.reportsFocus) return;
+		// A host that shows a pane it cannot read a viewer from is never given a countdown: closing
+		// would be a guess. A host that draws nothing has no pane to guess about.
+		if (attachment !== undefined && attachment.presence === "unknown") return;
 		this.#clearSettledPanelClose(id);
 		const timeoutMs =
 			this.#deps.settledCloseTimeoutMs ??
@@ -819,7 +821,11 @@ export class SubagentManager {
 					this.#scheduleSettledPanelClose(id);
 					return;
 				}
-				if (attachment.reportsFocus && (!observed.known || observed.focused !== false)) {
+				// An observable panel has to answer "nobody"; an unwatched one has nothing on screen.
+				if (
+					attachment.presence === "observable" &&
+					(!observed.known || observed.focused !== false)
+				) {
 					this.#scheduleSettledPanelClose(id);
 					return;
 				}

@@ -159,7 +159,7 @@ test("hc opens a child terminal that carries the bridge environment", async () =
 		attachmentId: childTerminal,
 		createdBy: "owner",
 	});
-	expect(attachment.reportsFocus).toBe(false);
+	expect(attachment.presence).toBe("unwatched");
 	expect(calls[2]).toEqual([
 		"hc",
 		"run",

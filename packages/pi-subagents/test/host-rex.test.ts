@@ -199,7 +199,7 @@ test("Rex opens a dedicated window whose block carries the bridge environment", 
 		attachmentId: childBlock,
 		createdBy: "owner-1",
 	});
-	expect(attachment.reportsFocus).toBe(true);
+	expect(attachment.presence).toBe("observable");
 	expect(calls[2]).toEqual([
 		"rex",
 		"api",

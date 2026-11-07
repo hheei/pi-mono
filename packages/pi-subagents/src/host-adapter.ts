@@ -60,11 +60,21 @@ export interface HostObservation {
 	readonly detail: string;
 }
 
+/**
+ * How this host answers "is a human looking at this panel?".
+ *
+ * `observable` hosts report focus per panel, so a settled panel closes once the answer is "nobody".
+ * `unwatched` hosts draw nothing of their own — herdr-core has no window and no viewer field — so a
+ * settled panel is only ever read on request and closing it takes nothing off the screen. `unknown`
+ * hosts show a live pane but cannot name its viewer, so their panels are never closed on a guess.
+ * Only `unknown` gives up the ability to close a settled panel or reclaim an idle one.
+ */
+export type HostPresence = "observable" | "unwatched" | "unknown";
+
 export interface HostAttachment {
 	readonly identity: HostAttachmentIdentity;
 	readonly launch: HostCommandResult;
-	/** True when `observe()` can report focus; idle reclaim needs it and fails open without it. */
-	readonly reportsFocus: boolean;
+	readonly presence: HostPresence;
 	observe(): Promise<HostObservation>;
 	cleanup(): Promise<HostCommandResult>;
 }
@@ -220,7 +230,7 @@ export function createHcHostAdapter(options: HostAdapterOptions): HostAdapter {
 				identity: { host: "hc", attachmentId: address, createdBy: options.ownerId },
 				launch: created,
 				noun: "terminal",
-				reportsFocus: false,
+				presence: "unwatched",
 				observe: () => observeHcTerminal(runner, timeoutMs, address),
 				close: async () => {
 					const killed = await runner.run("hc", ["kill", address, "--json"], { timeoutMs });
@@ -305,7 +315,7 @@ export function createHerdrHostAdapter(options: HostAdapterOptions): HostAdapter
 				identity: { host: "herdr", attachmentId: target.tabId, createdBy: options.ownerId },
 				launch,
 				noun: "tab",
-				reportsFocus: true,
+				presence: "observable",
 				observe: async () => {
 					// Aliveness is the pane's foreground process; focus is a fact about the tab *and*
 					// its workspace, so both listings are read together with it.
@@ -389,7 +399,7 @@ export function createRexHostAdapter(options: HostAdapterOptions): HostAdapter {
 				identity: { host: "rex", attachmentId: blockId, createdBy: options.ownerId },
 				launch: created,
 				noun: "window",
-				reportsFocus: true,
+				presence: "observable",
 				observe: () => observeRexBlock(runner, timeoutMs, { blockId, session }),
 				close: () => runner.run("rex", ["block", "close", blockId], { timeoutMs }),
 				ownsAttachment: options.ownsAttachment,
@@ -442,7 +452,7 @@ export function createCmuxHostAdapter(options: HostAdapterOptions): HostAdapter 
 				// TODO(cmux-focus): cmux does not report which surface a human is looking at, so
 				// observation cannot answer `focused` and idle reclaim fails open here: a cmux child
 				// is only ever closed by agents_stop.
-				reportsFocus: false,
+				presence: "unknown",
 				observe: async () => {
 					const process = await runner.run("cmux", ["--json", "list-panels"], { timeoutMs });
 					if (process.timedOut || process.exitCode !== 0) return { process };
@@ -467,7 +477,7 @@ interface HostAttachmentOptions {
 	readonly identity: HostAttachmentIdentity;
 	readonly launch: HostCommandResult;
 	readonly noun: "pane" | "terminal" | "surface" | "tab" | "window";
-	readonly reportsFocus: boolean;
+	readonly presence: HostPresence;
 	/** Reads the child's process state; `alive: undefined` means the host could not answer. */
 	readonly observe: () => Promise<{
 		readonly process: HostCommandResult;
@@ -482,7 +492,7 @@ interface HostAttachmentOptions {
 function hostAttachment(options: HostAttachmentOptions): HostAttachment {
 	const observe = async (): Promise<HostObservation> => {
 		const result = await options.observe();
-		const focused = options.reportsFocus ? result.focused : undefined;
+		const focused = options.presence === "observable" ? result.focused : undefined;
 		return {
 			identity: options.identity,
 			// A host that could not answer is not reporting a dead child: `alive: false` is what lets
@@ -497,7 +507,7 @@ function hostAttachment(options: HostAttachmentOptions): HostAttachment {
 	return {
 		identity: options.identity,
 		launch: options.launch,
-		reportsFocus: options.reportsFocus,
+		presence: options.presence,
 		observe,
 		async cleanup(): Promise<HostCommandResult> {
 			if (!options.ownsAttachment(options.identity)) {
@@ -743,7 +753,7 @@ export function rebindHerdrTab(options: {
 		identity: { host: "herdr", attachmentId: options.tabId, createdBy: options.ownerId },
 		launch: { stdout: "", stderr: "", exitCode: 0, timedOut: false },
 		noun: "tab",
-		reportsFocus: true,
+		presence: "observable",
 		observe: async () => {
 			const tabs = await runner.run("herdr", ["tab", "list"], { timeoutMs });
 			if (tabs.timedOut || tabs.exitCode !== 0) return { process: tabs };
@@ -769,7 +779,7 @@ export function rebindCmuxSurface(options: {
 		identity: { host: "cmux", attachmentId: options.surfaceId, createdBy: options.ownerId },
 		launch: { stdout: "", stderr: "", exitCode: 0, timedOut: false },
 		noun: "surface",
-		reportsFocus: false,
+		presence: "unknown",
 		observe: async () => {
 			const process = await runner.run("cmux", ["--json", "list-panels"], { timeoutMs });
 			if (process.timedOut || process.exitCode !== 0) return { process };
@@ -913,7 +923,7 @@ export function rebindHcTerminal(options: {
 		identity: { host: "hc", attachmentId: options.address, createdBy: options.ownerId },
 		launch: { stdout: "", stderr: "", exitCode: 0, timedOut: false },
 		noun: "terminal",
-		reportsFocus: false,
+		presence: "unwatched",
 		observe: () => observeHcTerminal(runner, timeoutMs, options.address),
 		close: () => runner.run("hc", ["kill", options.address, "--json"], { timeoutMs }),
 		ownsAttachment: options.ownsAttachment,
@@ -1168,7 +1178,7 @@ export function rebindRexBlock(options: {
 		identity: { host: "rex", attachmentId: options.blockId, createdBy: options.ownerId },
 		launch: { stdout: "", stderr: "", exitCode: 0, timedOut: false },
 		noun: "window",
-		reportsFocus: true,
+		presence: "observable",
 		observe: async () => {
 			// The registry keeps the block, not the session: resolve it once, then reuse the answer.
 			session ??= await resolveRexSession(runner, timeoutMs, options.blockId);
