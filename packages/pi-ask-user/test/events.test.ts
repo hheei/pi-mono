@@ -103,6 +103,37 @@ describe("issue #51 event payload redaction", () => {
 		expect(result.details.response).toEqual({ kind: "selection", selections: ["B"] });
 		expect(result.details.cancelled).toBe(false);
 	});
+
+	test("announces the open question with its options, then closes it", async () => {
+		const tool = await setupTool();
+		await tool.execute(
+			"tool-call-id",
+			{ question: "Pick", context: "ctx", options: ["A", "B"] },
+			undefined,
+			undefined,
+			{
+				hasUI: true,
+				mode: "tui",
+				ui: { custom: customUI(async () => ({ kind: "selection", selections: ["A"] })) },
+			},
+		);
+
+		const opened = emittedEvents.filter((event) => event.name === "pi-ask-user:question");
+		expect(opened).toHaveLength(2);
+		const payload = opened[0]?.payload as any;
+		expect(payload.questions).toEqual([
+			{
+				index: 0,
+				total: 1,
+				question: "Pick",
+				context: "ctx",
+				options: [{ title: "A" }, { title: "B" }],
+				allowMultiple: false,
+				allowFreeform: true,
+			},
+		]);
+		expect(opened[1]?.payload).toEqual({ questions: null });
+	});
 });
 
 test("opens the prompt as an inline custom surface", async () => {

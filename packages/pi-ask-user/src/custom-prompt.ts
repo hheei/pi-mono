@@ -6,6 +6,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { isRecord, openTuiSurface } from "@hheei/pi-ext-core";
+import { ASK_USER_ANSWER_EVENT } from "./events";
 
 export interface CustomPromptRequest<T> {
 	signal?: AbortSignal | undefined;
@@ -46,14 +47,14 @@ export async function runCustomPrompt<T>(
 	let externalAnswer: T | null | undefined;
 	let unsubscribeAnswer: (() => void) | undefined;
 	if (pi.events && typeof pi.events.on === "function") {
-		unsubscribeAnswer = pi.events.on("pi-ask-user:answer", (data: unknown) => {
-			if (isRecord(data)) {
-				if (data.cancel === true) {
-					local.abort();
-				} else if (data.response !== undefined) {
-					externalAnswer = data.response as T;
-					local.abort();
-				}
+		unsubscribeAnswer = pi.events.on(ASK_USER_ANSWER_EVENT, (data: unknown) => {
+			if (!isRecord(data)) return;
+			if (data.cancel === true) {
+				externalAnswer = null;
+				local.abort();
+			} else if (data.response !== undefined) {
+				externalAnswer = data.response as T;
+				local.abort();
 			}
 		});
 	}

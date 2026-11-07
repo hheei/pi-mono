@@ -135,6 +135,7 @@ export async function executeSingle(
 		});
 	}
 
+	events.open([{ index: 0, total: 1, ...prompt }]);
 	events.blocked(true, { question });
 	let response: AskResponse | null = null;
 	try {
@@ -162,6 +163,7 @@ export async function executeSingle(
 		});
 	} finally {
 		events.blocked(false);
+		events.close();
 	}
 
 	// A caller abort that lands while the prompt resolves still cancels the answer.
@@ -221,6 +223,10 @@ export async function executeBatch(
 	});
 
 	const batchQuestion = heading ?? questions[0]?.question;
+	events.open(
+		questions.map((question, index) => ({ ...question, index, total: questions.length })),
+		heading,
+	);
 	events.blocked(true, batchQuestion ? { question: batchQuestion } : undefined);
 	let answers: BatchAnswer[] | null = null;
 	try {
@@ -234,6 +240,7 @@ export async function executeBatch(
 		});
 	} finally {
 		events.blocked(false);
+		events.close();
 	}
 
 	if (answers === null || signal?.aborted) {
