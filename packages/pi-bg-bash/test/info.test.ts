@@ -7,7 +7,7 @@ import { toolHost } from "./fixtures/harness.js";
 
 const theme = { fg: (_tone: string, text: string) => text };
 const event = {
-	id: "bash-demo-1",
+	id: "bash-3f9a1c",
 	purpose: "pnpm test",
 	status: "completed" as const,
 	output: "done",
@@ -78,7 +78,7 @@ test("uses MessageView when available and keeps fallback rows width-safe", async
 	).toEqual(["view"]);
 	expect(specs[0]?.header).toEqual({
 		kind: "bg-bash",
-		summary: "󰄴 bash-demo-1 · terminal · completed",
+		summary: "✓ #3f9a1c terminal · completed",
 		tone: "success",
 	});
 	expect(specs[0]?.body).toBe("done\nfull output");

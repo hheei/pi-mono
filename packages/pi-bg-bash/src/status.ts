@@ -1,20 +1,22 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { ThemeLike } from "@hheei/pi-ext-core";
-import type { BashJobRegistry, BashJobSnapshot } from "./bash-jobs.js";
+import type { BashJobRegistry } from "./bash-jobs.js";
 
 export const BASH_STATUS_KEY = "pi-bg-bash";
-const RUNNING_GLYPH = "󰪠";
 
-function formatJob(job: BashJobSnapshot, theme: ThemeLike): string {
-	return theme.fg("accent", RUNNING_GLYPH) + theme.fg("dim", ` ${job.id}`);
+/** Display shorthand only; commands and tools still use the full job id. */
+export function formatBashId(id: string): string {
+	return `#${id.replace(/^bash-/u, "")}`;
 }
 
-export function formatBashStatus(jobs: BashJobRegistry, theme: ThemeLike): string | undefined {
+export function formatBashStatus(jobs: BashJobRegistry, theme?: ThemeLike): string | undefined {
 	const running = jobs
 		.list()
 		.filter((job) => job.status === "running" || job.status === "stopping");
 	if (running.length === 0) return undefined;
-	return running.map((job) => formatJob(job, theme)).join(" ");
+	const count = `x${running.length}`;
+	if (!theme) return `bash ${count}`;
+	return `${theme.fg("muted", "bash")} ${theme.fg("accent", count)}`;
 }
 
 export function createBashStatus(
@@ -33,10 +35,7 @@ export function createBashStatus(
 	return {
 		refresh(jobs): void {
 			if (!disposed && typeof ui.setStatus === "function")
-				ui.setStatus(
-					BASH_STATUS_KEY,
-					formatBashStatus(jobs, ui.theme ?? { fg: (_tone: string, text: string) => text }),
-				);
+				ui.setStatus(BASH_STATUS_KEY, formatBashStatus(jobs, ui.theme));
 		},
 		dispose,
 	};

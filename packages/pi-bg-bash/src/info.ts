@@ -5,6 +5,7 @@ import { readMessageView } from "@hheei/pi-ext-core";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import type { BashJobReminder, BashTerminalEvent } from "./bash-jobs.js";
+import { formatBashId } from "./status.js";
 
 export const BASH_INFO_TYPE = "bg-bash-info";
 const schema = Type.Object({
@@ -52,18 +53,22 @@ function tone(status: string): "accent" | "success" | "warning" | "error" {
 	if (status === "cancelled" || status === "timed_out") return "warning";
 	return "accent";
 }
-function glyph(status: string, kind: string): string {
-	if (kind !== "terminal") return "󰪠";
-	if (status === "completed") return "󰄴";
-	if (status === "failed" || status === "unknown") return "󰅚";
-	if (status === "cancelled" || status === "timed_out") return "󰀪";
-	return "󰪠";
+
+/** Same glyph vocabulary as a subagent entry: one status, one mark. */
+function glyph(status: string): string {
+	if (status === "completed") return "\u2713";
+	if (status === "failed" || status === "unknown") return "\u2717";
+	if (status === "cancelled" || status === "timed_out") return "!";
+	return "\u2722";
 }
+
+function summary(value: BashInfo): string {
+	return `${glyph(value.status)} ${formatBashId(value.id)} ${value.kind} \u00b7 ${value.status}`;
+}
+
 function heading(value: BashInfo, theme: Pick<Theme, "fg">): string {
 	return (
-		theme.fg("dim", `info · bg-bash · `) +
-		theme.fg(tone(value.status), glyph(value.status, value.kind)) +
-		theme.fg("dim", ` ${value.id} · ${value.kind} · ${value.status}`)
+		theme.fg("dim", "info \u00b7 bg-bash \u00b7 ") + theme.fg(tone(value.status), summary(value))
 	);
 }
 
@@ -92,7 +97,7 @@ export function registerBashInfo(pi: Pick<ExtensionAPI, "registerEntryRenderer">
 				theme,
 				header: {
 					kind: "bg-bash",
-					summary: `${glyph(value.status, value.kind)} ${value.id} · ${value.kind} · ${value.status}`,
+					summary: summary(value),
 					tone: tone(value.status),
 				},
 				...(value.message.trim() === "" ? {} : { body: value.message }),
