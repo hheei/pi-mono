@@ -342,7 +342,8 @@ singleton。
 `@hheei/pi-ext-core` 根入口为所有公开能力的单一收敛点。所有 API 按以下功能域正交组织：
 
 ### 1. 生命周期与错误处理 (Lifecycle & Errors)
-- `registerExtensionLifecycle(pi, options)`: 注册以 package name 为稳定 key 的扩展生命周期，提供幂等清理与 `context.signal`。
+- `registerExtensionLifecycle(pi, options)`: 注册以 package name 为稳定 key 的扩展生命周期，提供幂等清理与 `context.signal`。可选 `end(reason)` 在信号中止与 disposer 运行之前收到 Pi 的 `session_shutdown` reason，用于让 scope 自己决定是否把某个资源交给下一次 `start` 接管（当前唯一使用者是 pi-bg-bash 的 reload 保留）。
+- `getGlobalState(name, create)`: 以 `Symbol.for` 在进程级共享一个 registry；extension reload 会重新求值模块，需要跨 reload 存活的状态放这里，而不是模块级变量。
 - `DisposerRegistry`: 逆序安全清理闭包容器。
 - `errorMessage(error)`: 安全字符串化未知异常。
 - `abortError(message?)`: 构造规范 `AbortError`。

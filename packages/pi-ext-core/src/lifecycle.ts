@@ -1,4 +1,8 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	SessionShutdownEvent,
+} from "@earendil-works/pi-coding-agent";
 import { createDisposerRegistry, type DisposerRegistry } from "./disposer-registry.js";
 
 /**
@@ -18,6 +22,12 @@ export interface ExtensionLifecycleOptions {
 	readonly key: string;
 	/** Creates session-owned resources. Failure triggers registered cleanup. */
 	readonly start: (context: ExtensionLifecycleContext) => void | Promise<void>;
+	/**
+	 * Called with the reason the scope ended, before its signal aborts and its resources are
+	 * disposed. A scope that keeps something alive past the end reports that here, so its disposers
+	 * can hand it over instead of stopping it.
+	 */
+	readonly end?: (reason: SessionShutdownEvent["reason"] | undefined) => void | Promise<void>;
 }
 
 /** Registers one session-scoped lifecycle owner for an extension package. */
@@ -30,8 +40,8 @@ export function registerExtensionLifecycle(
 	pi.on("session_start", async (_event, context) => {
 		await controller.start(context);
 	});
-	pi.on("session_shutdown", async () => {
-		await controller.shutdown();
+	pi.on("session_shutdown", async (event) => {
+		await controller.shutdown(event.reason);
 	});
 }
 
@@ -45,7 +55,7 @@ function createLifecycleController(
 	options: ExtensionLifecycleOptions,
 ): {
 	start(context: ExtensionContext): Promise<void>;
-	shutdown(): Promise<void>;
+	shutdown(reason: SessionShutdownEvent["reason"] | undefined): Promise<void>;
 } {
 	let active: ActiveLifecycle | undefined;
 	let transition = Promise.resolve();
@@ -60,12 +70,22 @@ function createLifecycleController(
 		);
 		return result;
 	};
-	const shutdownUnlocked = async (): Promise<void> => {
+	const shutdownUnlocked = async (
+		reason: SessionShutdownEvent["reason"] | undefined,
+	): Promise<void> => {
 		const current = active;
 		if (current === undefined) return;
 		active = undefined;
+		const failures: Array<{ readonly id: string; readonly error: unknown }> = [];
+		if (options.end !== undefined) {
+			try {
+				await options.end(reason);
+			} catch (error) {
+				failures.push({ id: "scope.end", error });
+			}
+		}
 		current.controller.abort();
-		const failures = await current.resources.cleanup();
+		failures.push(...(await current.resources.cleanup()));
 		if (failures.length > 0) {
 			throw new AggregateError(
 				failures.map((failure) => failure.error),
@@ -77,11 +97,10 @@ function createLifecycleController(
 	return {
 		start(context: ExtensionContext): Promise<void> {
 			return enqueue(async () => {
-				if (active !== undefined) await shutdownUnlocked();
+				if (active !== undefined) await shutdownUnlocked(undefined);
 				const controller = new AbortController();
 				const resources = createDisposerRegistry();
-				const created: ActiveLifecycle = { controller, resources };
-				active = created;
+				active = { controller, resources };
 				try {
 					await options.start({
 						pi,
@@ -104,6 +123,6 @@ function createLifecycleController(
 				}
 			});
 		},
-		shutdown: (): Promise<void> => enqueue(shutdownUnlocked),
+		shutdown: (reason): Promise<void> => enqueue(() => shutdownUnlocked(reason)),
 	};
 }

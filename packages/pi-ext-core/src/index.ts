@@ -36,6 +36,7 @@ export {
 	readExtensionHooks,
 	registerExtensionHook,
 } from "./extension-point.js";
+export { getGlobalState } from "./global-state.js";
 export type {
 	ExtensionSettingsPaths,
 	JsonSettingsValueSource,

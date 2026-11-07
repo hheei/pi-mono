@@ -4,7 +4,7 @@
 
 ## 目标与边界
 
-Shell 命令默认不是 rerun-safe，文件修改、网络请求等副作用无法由账本撤销。reload、resume 或父进程崩溃后，只恢复同一 session 的执行事实、日志位置与未记录的报告。没有可靠终态时报告 `unknown`，说明命令可能未启动、已经部分执行、仍在运行或已结束，交给 agent 检查副作用并决定下一步。恢复路径绝不 spawn、接管旧 PID、发送信号或自动重跑；重新执行只能来自新的显式工具调用，生成新 ID。
+Shell 命令默认不是 rerun-safe，文件修改、网络请求等副作用无法由账本撤销。extension reload 不停止执行：registry、输出收集、timeout 与账本锁被保留，下一次 `session_start` 接管同一 registry（reload 会重新求值模块，所以这份状态放在进程级 carried 表中）。resume、切换 session 或父进程崩溃后，只恢复同一 session 的执行事实、日志位置与未记录的报告。没有可靠终态时报告 `unknown`，说明命令可能未启动、已经部分执行、仍在运行或已结束，交给 agent 检查副作用并决定下一步。恢复路径绝不 spawn、接管旧 PID、发送信号或自动重跑；重新执行只能来自新的显式工具调用，生成新 ID。
 
 不引入独立 runner、跨崩溃继续执行保证、通用任务注册表或跨 extension 依赖。前台 Bash 继续遵循原 tool call 的取消契约，不登记恢复记录。
 
@@ -36,7 +36,8 @@ session start → restore records → branch receipts → bg-bash-report → age
 | --- | --- |
 | 父 agent abort / Esc | 后台命令继续，前台依其取消信号停止 |
 | bg_bash_stop | 先保存 stop-intent，再清理当前拥有的进程树；取消等待不撤销 stop |
-| reload / 切换 session / 显式 quit | 保留现有清理策略，停止当前拥有的进程并保存结果；清理无法确认则 unknown |
+| extension reload | 不停止进程：registry、输出收集、timeout 和账本锁原样保留在进程级 carried 表中，下一次 `session_start` 按 sessionId 接管。carried 表只在 reload 与随后的 start 之间持有这一个 registry |
+| 切换 session / 显式 quit | 保留现有清理策略，停止当前拥有的进程并保存结果；清理无法确认则 unknown |
 | resume 原 session | 只恢复记录，补交当前分支尚未记录的报告 |
 | new / fork | Pi 先关闭原 session，停止其当前拥有的命令并保存结果；新 session 使用独立账本，复制的历史工具 ID 不获得查询或控制权，需 resume 原 session 查证 |
 | tree | 不撤销副作用；按启动 anchor 暂停或恢复报告 |

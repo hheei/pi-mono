@@ -52,9 +52,9 @@ SubagentManager → child session / SQLite → report ───┴→ Background
 
 取消是请求：发出 signal 后进入 stopping，实际 close/退出确认后记录终态并结束输出收集；不能因发送 signal 成功就声称执行已退出。自然完成与取消竞态保留可观察的真实结果。停止 Bash 清理整棵进程树，重复 stop/dispose 幂等，迟到事件不能复活执行。
 
-Bash ID 必须跨同一 session 的 registry 重建保持唯一，完整日志不得因 ID 复用被覆盖；采用每次 runtime 的随机标识加序号。前台 Bash 复用执行能力但不登记自动交付，完成后释放记录。后台已确认结果有界保留，活动和未确认结果不能被淘汰。
+Bash ID 必须跨同一 session 的 registry 重建保持唯一，完整日志不得因 ID 复用被覆盖；采用随机 6 位十六进制标识（形如 `bash-3f9a1c`），与 child id 同构，分配时校验本 registry 现有 id，日志文件名即 id。前台 Bash 复用执行能力但不登记自动交付，完成后释放记录。后台已确认结果有界保留，活动和未确认结果不能被淘汰。
 
-Bash 采用[执行记录恢复方案 A](bash-execution-recovery.md)：启动前保存意图，关键转移写入本 session 的 SQLite 账本。session 替换、reload、shutdown 清理 timer、订阅与当前所拥有进程，保留记录和日志。resume 只恢复执行记录与报告；缺少可靠终态时报告 unknown，由 agent 检查副作用后决定下一步。绝不接管旧 PID、恢复运行或自动重跑命令。子代理沿用现有持久化与 reconnect 契约，parent reload 只释放本地连接。
+Bash 采用[执行记录恢复方案 A](bash-execution-recovery.md)：启动前保存意图，关键转移写入本 session 的 SQLite 账本。session 替换与 shutdown 清理 timer、订阅与当前所拥有进程，保留记录和日志；extension reload 例外：registry、输出收集、timeout 与账本锁被保留在进程级 carried 表中，下一次 `session_start` 按 sessionId 接管，footer 与交付通道重新绑定。resume 只恢复执行记录与报告；缺少可靠终态时报告 unknown，由 agent 检查副作用后决定下一步。绝不接管旧 PID、恢复运行或自动重跑命令。子代理沿用现有持久化与 reconnect 契约，parent reload 只释放本地连接。
 
 账本对 `tasks/<sessionId>/bash.sqlite.lock` 持有一个进程级排他锁，因为两个 writer 会各自认领同一份执行记录。同一个 session file 被两个 Pi 进程挂载时（attach 后 fork、只读看历史），后挂载者拿不到锁：它不报 extension 错误，也不写记录，而是让本 session 的 Background Bash 保持不可用，只发一条 `info` 提示，工具返回既有的「unavailable outside active session」。fork 或新 session 有自己的 sessionId，因此有独立账本目录，正常可用；先前的 writer 退出后（OS 随进程释放锁）重新 `session_start` 也会恢复写入。
 

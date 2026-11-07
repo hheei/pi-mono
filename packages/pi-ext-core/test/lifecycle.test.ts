@@ -41,3 +41,24 @@ test("cleans registered resources when start fails", async () => {
 	await expect(host.emit("session_start")).rejects.toThrow("start failed");
 	expect(calls).toEqual(["cleanup"]);
 });
+
+test("tells the scope why it ended before disposing its resources", async () => {
+	const host = createFakePiHost();
+	const calls: string[] = [];
+	registerExtensionLifecycle(host.pi, {
+		key: "@hheei/pi-carried",
+		start: (context) => {
+			context.resources.add("scope", () => {
+				calls.push("cleanup");
+			});
+		},
+		end: (reason) => {
+			calls.push(`end:${reason}`);
+		},
+	});
+
+	await host.emit("session_start");
+	await host.emit("session_shutdown", { reason: "reload" });
+
+	expect(calls).toEqual(["end:reload", "cleanup"]);
+});

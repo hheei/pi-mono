@@ -16,8 +16,8 @@ import { ledgerTemporaryDirectory } from "./fixtures/ledger-directory.js";
 interface Lifecycle {
 	readonly tools: ReturnType<typeof toolHost>["tools"];
 	readonly start: () => Promise<void>;
-	readonly shutdown: () => Promise<void>;
-	readonly fire: (type: string) => Promise<void>;
+	readonly shutdown: (reason?: "quit" | "reload" | "new" | "resume" | "fork") => Promise<void>;
+	readonly fire: (type: string, event?: Record<string, unknown>) => Promise<void>;
 	readonly warnings: string[];
 	readonly context: ExtensionToolContext;
 	readonly directory: string;
@@ -66,14 +66,14 @@ function lifecycle(existing?: SessionManager): Lifecycle {
 	const runtime = createBashRuntime();
 	registerBgBashTools(pi, runtime.state);
 	registerBashLifecycle(pi, runtime.slot);
-	const fire = async (type: string): Promise<void> => {
-		await handlers.get(type)?.({}, context);
+	const fire = async (type: string, event: Record<string, unknown> = {}): Promise<void> => {
+		await handlers.get(type)?.({ type, ...event }, context);
 	};
 	const current: Lifecycle = {
 		tools: host.tools,
 		fire,
 		start: () => fire("session_start"),
-		shutdown: () => fire("session_shutdown"),
+		shutdown: (reason) => fire("session_shutdown", reason === undefined ? {} : { reason }),
 		warnings,
 		context,
 		directory,
@@ -101,6 +101,34 @@ test("each session reads current Bash settings after registration", async () => 
 	expect(read).toHaveBeenCalledTimes(2);
 });
 
+test("an extension reload carries running jobs into the next start instead of stopping them", async () => {
+	const current = lifecycle();
+	await current.start();
+	const started = await toolFor(current.tools, "bg_bash_spawn").execute(
+		"call",
+		{ command: "sleep 30" },
+		undefined,
+		undefined,
+		current.context,
+	);
+	expect(started).not.toMatchObject({ isError: true });
+	const { id } = started.details as { id: string };
+	const owned = current.jobs();
+
+	await current.shutdown("reload");
+	expect(current.jobs()).toBeUndefined();
+	await current.start();
+
+	// The same registry answers again: the child kept running, so nothing was restarted or rebuilt.
+	expect(current.jobs()).toBe(owned);
+	expect(current.jobs()?.get(id)).toMatchObject({ status: "running" });
+	// No second instance opened the ledger, so the reload never looked like a concurrent Pi.
+	expect(current.warnings).toEqual([]);
+
+	await current.shutdown();
+	expect(current.jobs()).toBeUndefined();
+});
+
 test("a session start owns one Bash registry and teardown releases it", async () => {
 	const current = lifecycle();
 	await current.start();
@@ -118,11 +146,9 @@ test("a session start owns one Bash registry and teardown releases it", async ()
 	await current.fire("tool_result");
 	// The footer follows the shared streaming repaint window, so the first change lands immediately
 	// and the settled state arrives on the trailing paint rather than synchronously.
+	expect(id).toMatch(/^bash-[0-9a-f]{6}$/u);
 	await vi.waitFor(() =>
-		expect(current.context.ui.setStatus).toHaveBeenLastCalledWith(
-			"pi-bg-bash",
-			expect.stringContaining(id),
-		),
+		expect(current.context.ui.setStatus).toHaveBeenLastCalledWith("pi-bg-bash", "bash x1"),
 	);
 
 	// Teardown stops the owned process and waits for its exit before the session is gone.

@@ -19,11 +19,14 @@ const LOCK_TIMEOUT_MS = 2_000;
  * so a new or forked session never imports another session's execution ownership.
  */
 export function bashExecutionDirectory(context: Pick<ExtensionContext, "sessionManager">): string {
-	const manager = context.sessionManager;
-	const sessionId = manager?.getSessionId?.() ?? "session";
-	const sessionFile = manager?.getSessionFile?.();
+	const sessionFile = context.sessionManager?.getSessionFile?.();
 	const base = sessionFile === undefined ? join(getAgentDir(), "sessions") : dirname(sessionFile);
-	return join(base, "tasks", sessionId);
+	return join(base, "tasks", bashSessionId(context));
+}
+
+/** The session identity Background Bash keys its records by; a missing id keeps one bucket. */
+export function bashSessionId(context: Pick<ExtensionContext, "sessionManager">): string {
+	return context.sessionManager?.getSessionId?.() ?? "session";
 }
 
 /** Last committed owner observation. `settled` means collection ended, not success or delivery. */
