@@ -1,6 +1,6 @@
 {
 	"name": "@hheei/pi-bg-bash",
-	"version": "0.4.1",
+	"version": "0.4.2",
 	"description": "Background Bash tools with durable execution records and report delivery.",
 	"type": "module",
 	"main": "dist/index.js",
