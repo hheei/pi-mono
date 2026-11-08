@@ -264,14 +264,14 @@ export interface SpawnSubagentInput {
 }
 
 /**
- * Input for a single delegated turn. An existing child ID always takes precedence over the agent
- * definition: the child already owns its launch configuration, model, and session history.
+ * Input for a single delegated turn. Omitted or blank id creates a child. A non-blank child ID
+ * takes precedence over agent: the child already owns its launch configuration and history.
  */
 export interface DelegateSubagentInput {
 	readonly task: string;
 	readonly id?: string;
 	readonly agent?: string;
-	/** Only used when creating a child; ignored when id is supplied. */
+	/** Only used when creating a child; ignored when a non-blank id is supplied. */
 	readonly cwd?: string;
 	/**
 	 * Opaque owned-scope token. Only a consumer that ends the child itself sets it, and an owned

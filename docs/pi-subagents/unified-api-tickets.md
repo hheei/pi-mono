@@ -8,6 +8,8 @@
 
 ## 执行规则
 
+当前 delegate 输入补充：新建应省略 id 或传入 ""（纯空白同样新建），并提供 agent；非空 id 才走接续，未知非空 id 报错。下方历史实现记录中的“拒绝空 id”已由此规则取代。
+
 - 每项形成可运行、可验证的内聚变更；先实现内部路径，再在对应接线 ticket 原子切换公共工具，不提前发布占位工具或兼容 alias。
 - 修改 TypeScript 前阅读根 DESIGN_TS.md；保留无关工作区改动。使用 package 内既有能力，不增加通用 adapter、全局任务服务或新 package。
 - 不做旧数据迁移、revision 回填、双读或旧 API 兼容；不自动删库。新格式自身的恢复必须保留。
@@ -58,7 +60,7 @@
 **交付**
 
 - 提供 Pi 与 controller 两个实际消费者共用的 package 内业务路径，复用 manager/session/bootstrap；IPC 不再独占 receipt 受理逻辑。
-- 无 id 创建、有 id steer；新建保留 cwd，接续不改变冻结配置；未知 id 不创建替代 agent。
+- 省略或空白 id 创建、非空 id steer；新建保留 cwd，接续不改变冻结配置；未知非空 id 不创建替代 agent。
 - 每次受理 revision 与实际 workVersion/runBoundary 关联；同轮多次 steer 可结算相同正文，下一轮隔离。
 - 先记录持久 settlement，再进入交付协调；保留失败、副作用与安全重试信息。为 04 留下实际需要的结算接入点，不预建通用事件框架。
 

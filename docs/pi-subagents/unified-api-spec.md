@@ -30,14 +30,14 @@ MCP server 自报名称和推荐 client 配置键均为 pi_agents。工具只注
 | 参数 | 规则 |
 | --- | --- |
 | task: string | 必填，不能是空白文本；沿用任务清洗与边界验证 |
-| id?: string | 提供则复用已有 agent session |
+| id?: string | 省略、空字符串或纯空白表示新建；非空值复用已有 agent session |
 | agent?: string | 新建时必填，接续时不需要；不新增默认 agent 选择规则 |
 | cwd?: string | 新建时指定目录，缺省继承父端工作目录 |
 | wait?: boolean | 两端默认 true；false 受理后立即返回 |
 
-不接受 title 或 mode，未知参数报错。提供 id 时沿用现有 id 优先规则，忽略创建参数 agent/cwd，不改变已有 agent 的定义或工作目录。
+不接受 title 或 mode，未知参数报错。提供非空 id 时沿用现有 id 优先规则，忽略创建参数 agent/cwd，不改变已有 agent 的定义或工作目录。
 
-运行中注入 steer；idle/blocked/done/error 且允许恢复时，在同一 session 启动下一轮。stop 后也可再次 delegate。未知 id 返回错误，不退化为新建。不提供 follow_up 或模拟排队模式。
+运行中注入 steer；idle/blocked/done/error 且允许恢复时，在同一 session 启动下一轮。stop 后也可再次 delegate。新建应省略 id 或传入 ""，由系统分配 ID，不猜测 ID。未知非空 id 返回错误，不退化为新建。不提供 follow_up 或模拟排队模式。
 
 wait:true 等待该 revision 完成、阻塞、失败或进入不确定状态。等待期间不持有 per-agent mutation queue，保证 settlement、stop 和后续 steer 可以进入。
 

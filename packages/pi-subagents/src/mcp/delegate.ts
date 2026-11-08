@@ -9,8 +9,8 @@ export interface DelegateMcpInput extends DelegateSubagentInput {
 }
 
 /**
- * MCP-facing input contract. Both id and agent may be supplied: id is authoritative and agent is
- * ignored. Do not express the target as an exclusive union in the advertised tool schema.
+ * MCP-facing input contract. A non-blank id is authoritative; a blank id means create.
+ * Do not express the target as an exclusive union in the advertised tool schema.
  */
 export const delegateInputSchema = Type.Object(
 	{
@@ -26,16 +26,20 @@ export const delegateInputSchema = Type.Object(
 		),
 		id: Type.Optional(
 			Type.String({
-				description: "Existing child ID. Takes precedence over agent and reuses its session.",
+				description:
+					'Existing child ID. For a new child, omit id or pass "". A non-blank id takes precedence over agent and reuses its session.',
 			}),
 		),
 		agent: Type.Optional(
 			Type.String({
-				description: "Agent definition for a new child. Ignored whenever id is supplied.",
+				description:
+					"Agent definition for a new child. Ignored whenever a non-blank id is supplied.",
 			}),
 		),
 		cwd: Type.Optional(
-			Type.String({ description: "Working directory for a new child; ignored with id." }),
+			Type.String({
+				description: "Working directory for a new child; ignored with a non-blank id.",
+			}),
 		),
 	},
 	{ additionalProperties: false },
@@ -44,7 +48,7 @@ export const delegateInputSchema = Type.Object(
 export const delegateToolMetadata = {
 	name: "delegate",
 	description:
-		"Delegate work to a new or existing Pi agent. Supply agent to start a new session, or id to continue an existing one; with both, id wins and agent is ignored. Returns the delegation's id, revision, status and hasOutput, and by default waits for the result.",
+		'Delegate work to a new or existing Pi agent. New: supply agent and omit id or pass id: ""; never invent an id. Continue: supply an existing non-blank id; agent/cwd are ignored. Unknown non-blank ids fail. Returns id, revision, status and hasOutput, and by default waits for the result.',
 	inputSchema: delegateInputSchema,
 } as const;
 
@@ -54,9 +58,7 @@ export function parseDelegateInput(input: unknown): DelegateMcpInput {
 		throw new Error("Invalid delegate parameters");
 	}
 	if (stripHindsightContent(input.task) === "") throw new Error("Task must not be empty");
-	if (input.id !== undefined) {
-		if (input.id.trim() === "") throw new Error("Child id must not be empty");
-	} else if (input.agent === undefined || input.agent.trim() === "") {
+	if (!input.id?.trim() && (input.agent === undefined || input.agent.trim() === "")) {
 		throw new Error("Agent is required without an id");
 	}
 	return input;

@@ -1470,6 +1470,7 @@ export class SubagentManager {
 		onTarget?: (childId: string) => void,
 		signal?: AbortSignal,
 	): Promise<DelegationSubmission | OperationError> {
+		const id = input.id?.trim() === "" ? undefined : input.id;
 		if (stripHindsightContent(input.task).trim() === "") {
 			return failure("delegate", "Task must not be empty", undefined, undefined, [], false);
 		}
@@ -1481,33 +1482,30 @@ export class SubagentManager {
 			return failure(
 				"delegate",
 				"An owned delegation must come from the scope that dispatched it; the owner token does not match this call",
-				input.id,
+				id,
 				undefined,
 				[],
 				false,
 			);
 		}
-		if (input.id !== undefined) {
-			if (input.id.trim() === "") {
-				return failure("delegate", "Child id must not be empty", undefined, undefined, [], false);
-			}
+		if (id !== undefined) {
 			if (owner !== undefined) {
 				// An owned turn always creates its own child: claiming one a human started would hand
 				// a consumer a session whose reports it never asked for.
 				return failure(
 					"delegate",
 					"An owned delegation always creates a new child; give agent instead of id",
-					input.id,
+					id,
 					undefined,
 					[],
 					false,
 				);
 			}
-			const owned = this.#deps.ownership?.blockReason(input.id, undefined);
-			if (owned !== undefined) return failure("delegate", owned, input.id);
-			onTarget?.(input.id);
+			const owned = this.#deps.ownership?.blockReason(id, undefined);
+			if (owned !== undefined) return failure("delegate", owned, id);
+			onTarget?.(id);
 			// Ignore agent and cwd entirely: this child's launch config was frozen at spawn.
-			const child = await this.send(input.id, input.task);
+			const child = await this.send(id, input.task);
 			return isOperationError(child)
 				? child
 				: { child, action: "reuse", ...this.#claimedSubmission(child.id) };
@@ -1560,15 +1558,13 @@ export class SubagentManager {
 		signal?: AbortSignal,
 		onAccepted?: (view: DelegationView) => void,
 	): Promise<DelegationView | OperationError> {
+		const id = input.id?.trim() === "" ? undefined : input.id;
 		const wait = input.wait ?? true;
 		const task = stripHindsightContent(input.task).trim();
 		if (task === "") {
 			return failure("delegate", "Task must not be empty", undefined, undefined, [], false);
 		}
-		if (input.id !== undefined && input.id.trim() === "") {
-			return failure("delegate", "Child id must not be empty", undefined, undefined, [], false);
-		}
-		if (input.id === undefined && (input.agent === undefined || input.agent.trim() === "")) {
+		if (id === undefined && (input.agent === undefined || input.agent.trim() === "")) {
 			return failure(
 				"delegate",
 				"Agent is required without an id",
@@ -1580,19 +1576,15 @@ export class SubagentManager {
 		}
 		const filePath = this.#deps.registry.path;
 		const parentSessionId = this.#deps.parentSessionId;
-		if (input.id !== undefined && (await this.#deps.registry.get(input.id)) === undefined) {
+		if (id !== undefined && (await this.#deps.registry.get(id)) === undefined) {
 			// Nothing is reserved for a target that does not exist: a revision is only ever spent on
 			// work this parent actually accepted.
-			return failure("delegate", "Unknown child", input.id);
+			return failure("delegate", "Unknown child", id);
 		}
-		const active = input.id === undefined ? undefined : this.#waiters.get(input.id);
+		const active = id === undefined ? undefined : this.#waiters.get(id);
 		if (wait && active !== undefined) {
 			// Refused before anything is dispatched: a conflicted wait must not steer first.
-			return failure(
-				"delegate",
-				`Child ${input.id ?? ""} already has a waiting delegation`,
-				input.id,
-			);
+			return failure("delegate", `Child ${id ?? ""} already has a waiting delegation`, id);
 		}
 		const target: { receipt?: Receipt } = {};
 		const delivery: ReceiptDelivery = wait ? "pending" : "detached";
@@ -1621,7 +1613,7 @@ export class SubagentManager {
 			);
 		} catch (error) {
 			// A refused reservation happened before any dispatch, so nothing has to be undone.
-			return failure("delegate", errorMessage(error), input.id, undefined, [], true);
+			return failure("delegate", errorMessage(error), id, undefined, [], true);
 		}
 		const receipt = target.receipt;
 		if (receipt === undefined) {

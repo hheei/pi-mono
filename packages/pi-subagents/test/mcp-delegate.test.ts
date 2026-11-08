@@ -9,6 +9,21 @@ describe("delegate MCP input", () => {
 		});
 	});
 
+	test.each(["", " \t\n"])("accepts blank id %j for a new child", (id) => {
+		expect(parseDelegateInput({ id, agent: "worker", task: "Work" })).toEqual({
+			id,
+			agent: "worker",
+			task: "Work",
+		});
+		expect(() => parseDelegateInput({ id, task: "Work" })).toThrow(/Agent/);
+		expect(() => parseDelegateInput({ id, agent: " ", task: "Work" })).toThrow(/Agent/);
+	});
+
+	test("describes omitted or empty id as creation, never an invented id", () => {
+		expect(delegateToolMetadata.description).toContain('omit id or pass id: ""');
+		expect(delegateToolMetadata.description).toContain("never invent an id");
+	});
+
 	test("accepts an existing child id without an agent", () => {
 		expect(parseDelegateInput({ id: "agent-21", task: "Continue tests" })).toEqual({
 			id: "agent-21",
@@ -46,9 +61,6 @@ describe("delegate MCP input", () => {
 		).toThrow(/Task/);
 		expect(() => parseDelegateInput({ task: "Work" })).toThrow(/Agent/);
 		expect(() => parseDelegateInput({ agent: "  ", task: "Work" })).toThrow(/Agent/);
-		expect(() => parseDelegateInput({ id: "  ", agent: "worker", task: "Work" })).toThrow(
-			/Child id/,
-		);
 		expect(parseDelegateInput({ id: "agent-21", agent: "", task: "Work" })).toEqual({
 			id: "agent-21",
 			agent: "",

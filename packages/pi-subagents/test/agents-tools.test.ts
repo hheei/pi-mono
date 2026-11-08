@@ -202,13 +202,28 @@ describe("agent tools", () => {
 		const delegate = registeredTools.find((tool) => tool.name === "agents_delegate");
 		if (delegate === undefined) throw new Error("agents_delegate was not registered");
 		const description = delegate.description ?? "";
-		expect(description).toContain("New: omit id and supply agent");
-		expect(description).toContain("Unknown or blank ids fail");
+		expect(description).toContain('New: supply agent and omit id or pass id: ""');
+		expect(description).toContain("Unknown non-blank ids fail");
+		expect(description).toContain("never invent an id");
 		expect(description).toContain('Create: agents_delegate({ agent: "worker", task: "..." })');
 		expect(description).toContain('Continue: agents_delegate({ id: "agent-3f9a1c", task: "..." })');
 		expect(description).toContain("- worker: Worker");
 		// Minimal prompt surface: guidance stays in the tool description, not a rewritten prompt.
 		expect(description.split("\n").length).toBeLessThanOrEqual(7);
+	});
+
+	test.each(["", " \t\n"])("delegate schema accepts blank id %j for creation", async (id) => {
+		const delegate = vi.fn(async () => view);
+		await toolset({ delegate } as unknown as SubagentManager)("agents_delegate", {
+			id,
+			agent: "worker",
+			task: "work",
+		});
+		expect(delegate).toHaveBeenCalledWith(
+			{ id, agent: "worker", task: "work" },
+			undefined,
+			expect.any(Function),
+		);
 	});
 
 	test("delegate rejects the removed title and mode parameters", async () => {

@@ -39,19 +39,21 @@ const delegateSchema = Type.Object(
 		),
 		id: Type.Optional(
 			Type.String({
-				minLength: 1,
 				description:
-					"Existing agent id, e.g. agent-3f9a1c. Takes precedence over agent and reuses its session.",
+					'Existing agent id, e.g. agent-3f9a1c. For a new agent, omit id or pass "". A non-blank id takes precedence over agent and reuses its session.',
 			}),
 		),
 		agent: Type.Optional(
 			Type.String({
 				minLength: 1,
-				description: "Agent name from <available_agents> for a new agent. Ignored with id.",
+				description:
+					"Agent name from <available_agents> for a new agent. Ignored with a non-blank id.",
 			}),
 		),
 		cwd: Type.Optional(
-			Type.String({ description: "Working directory for a new agent; ignored with id." }),
+			Type.String({
+				description: "Working directory for a new agent; ignored with a non-blank id.",
+			}),
 		),
 		owner: Type.Optional(
 			Type.String({
@@ -121,7 +123,7 @@ export function formatAvailableAgents(agents: readonly DiscoveredAgent[]): strin
 
 function getDelegateDescription(agents: readonly DiscoveredAgent[]): string {
 	return [
-		"Delegate work to an agent. New: omit id and supply agent. Continue: use an existing id; agent/cwd are ignored. Unknown or blank ids fail.",
+		'Delegate work to an agent. New: supply agent and omit id or pass id: "". Continue: supply an existing non-blank id; agent/cwd are ignored. Unknown non-blank ids fail; never invent an id.',
 		'Create: agents_delegate({ agent: "worker", task: "..." }). Continue: agents_delegate({ id: "agent-3f9a1c", task: "..." }).',
 		"Returns { id, revision, status, hasOutput }: revision identifies this delegation of that agent, and a finished delegation carries its result when wait is true. Results are delivered automatically when the task finishes, so do independent work or end your turn instead of polling agents_get.",
 		"Related agent tools: agents_get, agents_stop, agents_dashboard.",

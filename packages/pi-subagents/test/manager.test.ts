@@ -533,6 +533,46 @@ describe("SubagentManager over the bridge", () => {
 		await current.manager.stop(submitted.child.id);
 	});
 
+	test.each(["", " \t\n"])("delegation with blank id %j creates a child", async (id) => {
+		const current = await harness();
+		const submitted = await current.manager.submitDelegation({
+			id,
+			agent: "worker",
+			task: "First task",
+			cwd: current.cwd,
+		});
+		expect(submitted).toMatchObject({
+			action: "spawn",
+			child: { id: "sa_child1", cwd: current.cwd },
+		});
+		expect(current.launch).toHaveBeenCalledTimes(1);
+		await current.manager.stop("sa_child1");
+	});
+
+	test.each(["", " \t\n"])("delegate with blank id %j reserves a new revision", async (id) => {
+		const current = await harness();
+		const accepted = await current.manager.delegate({
+			id,
+			agent: "worker",
+			task: "work",
+			wait: false,
+		});
+		expect(accepted).toMatchObject({ id: "sa_child1", revision: 1, status: "accepted" });
+		expect(
+			latestReceiptForChild(STATE_DB_PATH, current.parentSessionId, "sa_child1"),
+		).toMatchObject({ revision: 1 });
+		await current.manager.stop("sa_child1");
+	});
+
+	test.each(["", " \t\n"])("delegate with blank id %j still requires an agent", async (id) => {
+		const current = await harness();
+		expect(await current.manager.delegate({ id, task: "work" })).toMatchObject({
+			reason: "Agent is required without an id",
+		});
+		expect(current.launch).not.toHaveBeenCalled();
+		expect(listReceipts(STATE_DB_PATH, current.parentSessionId).receipts).toEqual([]);
+	});
+
 	test("delegation with an id silently ignores agent and new-child options", async () => {
 		const current = await harness();
 		const initial = await current.manager.spawn({ agent: "worker", task: "First task" });
@@ -594,13 +634,10 @@ describe("SubagentManager over the bridge", () => {
 			reason: "Agent is required without an id",
 			safeToRetry: false,
 		});
-		expect(
-			await current.manager.submitDelegation({
-				id: "",
-				agent: "worker",
-				task: "work",
-			}),
-		).toMatchObject({ operation: "delegate", reason: "Child id must not be empty" });
+		expect(await current.manager.submitDelegation({ id: "", task: "work" })).toMatchObject({
+			operation: "delegate",
+			reason: "Agent is required without an id",
+		});
 		expect(await current.manager.submitDelegation({ agent: "worker", task: "   " })).toMatchObject({
 			operation: "delegate",
 			reason: "Task must not be empty",
