@@ -35,6 +35,7 @@ import {
 	listOwnedChildren,
 	openStateDb,
 } from "../src/state-db.js";
+import { createSubagentStatus } from "../src/status.js";
 import { advanceFakeTime, turn, until, useFakeClock, useRealClock } from "./helpers/fake-clock.js";
 import { createTemporaryDirectory } from "./helpers/tmp-dir.js";
 
@@ -2144,6 +2145,75 @@ describe("SubagentManager over the bridge", () => {
 		expect(spawned.note).toBeUndefined();
 		expect(test1.openPanel).toHaveBeenCalledTimes(1);
 		expect(test1.launch).not.toHaveBeenCalled();
+	});
+
+	test.each([false, true])("manual stop clears the footer (panel: %s)", async (host) => {
+		const current = await harness({ host });
+		const spawned = await current.manager.spawn({ agent: "worker", task: "Do the work." });
+		if ("reason" in spawned) throw new Error(spawned.reason);
+		await flush();
+		const setStatus = vi.fn();
+		const status = createSubagentStatus(
+			{ setStatus, theme: { fg: (_color: string, text: string) => text } },
+			new AbortController().signal,
+		);
+		const refreshes: Promise<void>[] = [];
+		const refresh = async (): Promise<void> => status.refresh(await current.manager.list());
+		const unsubscribe = current.manager.onChange(() => refreshes.push(refresh()));
+		try {
+			await refresh();
+			expect(setStatus).toHaveBeenLastCalledWith("pi-subagents", "agents x1");
+			await expect(current.manager.stop(spawned.child.id)).resolves.toMatchObject({
+				state: "done",
+			});
+			await Promise.all(refreshes);
+			expect(setStatus).toHaveBeenLastCalledWith("pi-subagents", undefined);
+		} finally {
+			unsubscribe();
+			status.dispose();
+			current.manager.closeLocalConnections();
+		}
+	});
+
+	test.each([
+		"runtime-exit",
+		"left-session",
+	] as const)("lease transition publishes its committed state: %s", async (transition) => {
+		const current = await harness();
+		const spawned = await current.manager.spawn({ agent: "worker", task: "Do the work." });
+		if ("reason" in spawned) throw new Error(spawned.reason);
+		await flush();
+		const snapshots: Promise<readonly { state: string }[]>[] = [];
+		const unsubscribe = current.manager.onChange(() => snapshots.push(current.manager.list()));
+		const state = transition === "runtime-exit" ? "blocked" : "done";
+		try {
+			const changed = settledState(current, spawned.child.id, state);
+			if (transition === "runtime-exit") {
+				const runtime = current.runtimes.get(spawned.child.id);
+				if (runtime === undefined) throw new Error("no runtime was started");
+				runtime.alive = false;
+				runtime.exit(0);
+			} else {
+				const record = await current.registry.get(spawned.child.id);
+				if (record?.runtime === undefined) throw new Error("no runtime was recorded");
+				current.bridge.emit(spawned.child.id, {
+					type: "child_lifecycle",
+					parentSessionId: current.parentSessionId,
+					childId: spawned.child.id,
+					runtimeIdentity: record.runtime.runtimeIdentity,
+					kind: "left_session",
+					sessionId: "another-session",
+				});
+			}
+			await changed;
+			await flush();
+			expect(await Promise.all(snapshots)).toContainEqual([
+				expect.objectContaining({ id: spawned.child.id, state }),
+			]);
+		} finally {
+			unsubscribe();
+			current.manager.closeLocalConnections();
+		}
 	});
 
 	test("stops a panel child by closing its panel, not by killing a process it does not own", async () => {

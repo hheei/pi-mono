@@ -25,7 +25,7 @@ import { isOperationError } from "./domain.js";
 import type { HostAttachment } from "./host-adapter.js";
 import { stripHindsightContent } from "./launch-spec.js";
 import type { HostDirectory, LeaseReady } from "./lease.js";
-import { commitLease, createConversationLease, type RuntimeGoneOutcome } from "./lease.js";
+import { applyLeaseEdge, createConversationLease, type RuntimeGoneOutcome } from "./lease.js";
 import type { OwnershipGuard } from "./ownership.js";
 import { processLockHeld, processLockPath } from "./process-lock.js";
 import {
@@ -660,7 +660,10 @@ export class SubagentManager {
 	): Promise<SubagentRecord | undefined> {
 		const current = await this.#deps.registry.get(id);
 		if (current === undefined) return undefined;
-		const next = await commitLease(this.#deps.registry, id, { type: "runtime-gone", outcome });
+		const next = await this.#update(
+			id,
+			(record) => applyLeaseEdge(record, { type: "runtime-gone", outcome }) ?? record,
+		);
 		if (
 			outcome === "drop" &&
 			current.state === "running" &&
@@ -2139,7 +2142,10 @@ export class SubagentManager {
 			let stopped: SubagentRecord;
 			try {
 				// The intent is written before anything is ended, so an interrupted stop is still a stop.
-				stopped = await commitLease(this.#deps.registry, id, { type: "stop-intent" });
+				stopped = await this.#update(
+					id,
+					(current) => applyLeaseEdge(current, { type: "stop-intent" }) ?? current,
+				);
 			} catch (error) {
 				this.#stopping.delete(id);
 				return failure("stop", errorMessage(error), id, record.state, [], true);
@@ -2473,7 +2479,10 @@ export class SubagentManager {
 				// The socket is not this child's channel any more either: leaving it up would let a
 				// relaunch mistake the old connection for the new runtime.
 				this.#deps.bridge.disconnect(id);
-				await commitLease(this.#deps.registry, id, { type: "left-session" });
+				await this.#update(
+					id,
+					(current) => applyLeaseEdge(current, { type: "left-session" }) ?? current,
+				);
 				this.#recordSettlement({
 					childId: id,
 					status: "failed",
@@ -2683,6 +2692,7 @@ export class SubagentManager {
 		return this.#mutate(id, () => this.#update(id, updater));
 	}
 
+	/** Commits manager state, then reconciles working state and publishes its new projection. */
 	async #update(
 		id: string,
 		updater: (record: SubagentRecord) => SubagentRecord,
